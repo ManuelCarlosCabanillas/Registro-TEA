@@ -124,6 +124,31 @@ async function taskChat(p) {
   return { ok: true, text: res.text };
 }
 
+// ---------- TAREA: transcribe (audio -> texto, Groq Whisper) ----------
+async function taskTranscribe(p) {
+  const key = process.env.GROQ_API_KEY;
+  if (!key) return { _err: 'no_key_groq' };
+  const b64 = p.audio || '';
+  if (!b64) return { _err: 'parse', _detail: 'audio vacío' };
+  let buf;
+  try { buf = Buffer.from(b64, 'base64'); } catch (e) { return { _err: 'parse', _detail: 'audio inválido' }; }
+
+  const mime = p.mime || 'audio/webm';
+  const name = mime.indexOf('mp4') !== -1 ? 'audio.mp4' : (mime.indexOf('ogg') !== -1 ? 'audio.ogg' : (mime.indexOf('mpeg') !== -1 ? 'audio.mp3' : 'audio.webm'));
+  const form = new FormData();
+  form.append('file', new Blob([buf], { type: mime }), name);
+  form.append('model', 'whisper-large-v3-turbo');
+  form.append('language', 'es');
+  form.append('response_format', 'json');
+
+  const r = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+    method: 'POST', headers: { 'Authorization': 'Bearer ' + key }, body: form
+  });
+  const j = await r.json().catch(function () { return null; });
+  if (!r.ok) { return { _err: 'api', _detail: (j && j.error && j.error.message) ? j.error.message : ('HTTP ' + r.status), _status: r.status }; }
+  return { ok: true, text: (j && j.text) ? j.text.trim() : '' };
+}
+
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') return err(405, 'Método no permitido');
@@ -136,12 +161,14 @@ exports.handler = async function (event) {
     if (p.task === 'parse') res = await taskParse(p);
     else if (p.task === 'analyze') res = await taskAnalyze(p);
     else if (p.task === 'chat') res = await taskChat(p);
+    else if (p.task === 'transcribe') res = await taskTranscribe(p);
     else return err(400, 'Tarea desconocida');
   } catch (e) {
     return err(500, 'Error interno: ' + (e && e.message ? e.message : e));
   }
 
   if (res._err === 'no_key') return err(503, 'La IA no está configurada todavía (falta la clave ANTHROPIC_API_KEY en Netlify).');
+  if (res._err === 'no_key_groq') return err(503, 'La transcripción de voz no está configurada todavía (falta la clave GROQ_API_KEY en Netlify).');
   if (res._err === 'refusal') return err(422, 'Claude no pudo procesar esta petición.');
   if (res._err === 'api') return err(502, 'Error de la API de Claude: ' + (res._detail || ''));
   if (res._err === 'parse') return err(502, 'No pude interpretar la respuesta. Intenta reformular.');

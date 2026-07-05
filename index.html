@@ -78,7 +78,7 @@
         <button class="btn-add-block" id="addDys">＋ Añadir desajuste</button>
       </section>
 
-      <p class="ver">Registro TEA · v13 · local + IA</p>
+      <p class="ver">Registro TEA · v14 · local + IA</p>
     </main>
 
     <main id="view-resumen" class="view" hidden>
@@ -304,13 +304,13 @@
         <button class="icon-btn" id="voiceClose" aria-label="Cerrar">✕</button>
       </div>
       <div class="sheet-body">
-        <p class="hint2" style="margin-top:0">Cuenta cómo ha ido (o parte del día). La IA lo convertirá en eventos y tú confirmas antes de guardar.</p>
+        <p class="hint2" style="margin-top:0">Graba contando cómo ha ido el día (o un rato). Al parar, se sube y transcribe solo, y la IA saca los eventos. Confirmas antes de guardar.</p>
         <div class="mic-wrap">
           <button class="mic-big" id="micBtn" aria-label="Grabar voz"><span class="mic-ico">🎤</span></button>
-          <div class="mic-status" id="micStatus">Toca el micro y habla</div>
+          <div class="mic-status" id="micStatus">Toca para grabar y cuenta el día</div>
         </div>
-        <div class="field-label">Texto</div>
-        <textarea id="voiceText" rows="4" placeholder="…o escribe aquí directamente. Ej: “Esta mañana en el parque se tapó los oídos y acabó llorando; le ayudó un abrazo. Comió bien en el desayuno.”"></textarea>
+        <div class="field-label">Texto (transcripción — puedes corregirlo)</div>
+        <textarea id="voiceText" rows="4" placeholder="…o escribe aquí directamente. Ej: “Esta mañana en el parque se tapó los oídos y acabó llorando; le ayudó un abrazo. Durmió una siesta de 2 horas.”"></textarea>
         <button class="btn-primary btn-block" id="voiceInterpret">✨ Interpretar con IA</button>
         <div id="voicePreview"></div>
       </div>

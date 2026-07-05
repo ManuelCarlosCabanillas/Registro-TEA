@@ -1121,41 +1121,91 @@
     aiChatBusy = false; renderAnalisis();
   }
 
-  // ---- Anotar por voz ----
-  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  var rec = null, recording = false, voiceBase = '', voiceFinal = '', voiceEvents = [];
+  // ---- Anotar por voz (graba en la app -> sube -> transcribe Groq -> extrae eventos) ----
+  function recSupported() { return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder); }
+  var mediaRec = null, mediaStream = null, audioChunks = [], recording = false, recTimer = null, recSecs = 0, voiceEvents = [];
 
   function openVoice() {
-    voiceEvents = []; voiceBase = ''; voiceFinal = '';
+    voiceEvents = [];
     $('voiceText').value = '';
     $('voicePreview').innerHTML = '';
     $('voiceSave').disabled = true;
+    $('voiceInterpret').disabled = false;
     $('voiceDate').textContent = (selectedDate === todayKey() ? 'Para hoy' : 'Para el ' + new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }));
-    if (!SR) { $('micBtn').disabled = true; $('micStatus').textContent = 'Tu navegador no soporta dictado. Escribe abajo 👇'; }
-    else { $('micBtn').disabled = false; $('micStatus').textContent = 'Toca el micro y habla'; }
+    if (!recSupported()) { $('micBtn').disabled = true; }
+    else { $('micBtn').disabled = false; }
     setMic(false);
     $('voiceBackdrop').hidden = false;
   }
-  function closeVoice() { stopRec(); $('voiceBackdrop').hidden = true; }
-  function setMic(on) { var b = $('micBtn'); if (!b) return; b.classList.toggle('rec', on); $('micStatus').textContent = on ? '● Escuchando… toca para parar' : (SR ? 'Toca el micro y habla' : 'Escribe abajo 👇'); }
-  function startRec() {
-    if (!SR || recording) return;
-    try { rec = new SR(); } catch (e) { return; }
-    rec.lang = 'es-ES'; rec.interimResults = true; rec.continuous = true;
-    voiceBase = $('voiceText').value ? $('voiceText').value.trim() + ' ' : '';
-    rec.onresult = function (e) {
-      // Reconstruye SIEMPRE desde todos los resultados (idempotente): evita que
-      // el motor duplique/triplique el texto al reemitir resultados.
-      var full = '';
-      for (var i = 0; i < e.results.length; i++) { full += e.results[i][0].transcript + (e.results[i].isFinal ? ' ' : ''); }
-      $('voiceText').value = (voiceBase + full).replace(/\s+/g, ' ').replace(/^\s+/, '');
-    };
-    rec.onerror = function (ev) { setMic(false); recording = false; if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') $('micStatus').textContent = 'Permiso de micro denegado. Escribe abajo 👇'; };
-    rec.onend = function () { recording = false; setMic(false); };
-    try { rec.start(); recording = true; setMic(true); } catch (e) {}
+  function closeVoice() { stopRec(true); $('voiceBackdrop').hidden = true; }
+  function fmtSecs(s) { return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+  function setMic(on) {
+    var b = $('micBtn'); if (!b) return;
+    b.classList.toggle('rec', on);
+    var ico = b.querySelector('.mic-ico'); if (ico) ico.textContent = on ? '⏹' : '🎤';
+    if (!on) $('micStatus').textContent = recSupported() ? 'Toca para grabar y cuenta el día' : 'Tu navegador no permite grabar. Escribe abajo 👇';
   }
-  function stopRec() { if (rec && recording) { try { rec.stop(); } catch (e) {} } recording = false; setMic(false); }
+  function pickMime() {
+    var c = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+    for (var i = 0; i < c.length; i++) { try { if (MediaRecorder.isTypeSupported(c[i])) return c[i]; } catch (e) {} }
+    return '';
+  }
+  async function startRec() {
+    if (!recSupported() || recording) return;
+    try { mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch (e) { $('micStatus').textContent = 'Permiso de micro denegado. Escribe abajo 👇'; return; }
+    var mt = pickMime();
+    try { mediaRec = mt ? new MediaRecorder(mediaStream, { mimeType: mt, audioBitsPerSecond: 32000 }) : new MediaRecorder(mediaStream); }
+    catch (e) { try { mediaRec = new MediaRecorder(mediaStream); } catch (e2) { stopStream(); $('micStatus').textContent = 'No se pudo grabar. Escribe abajo 👇'; return; } }
+    audioChunks = [];
+    mediaRec.ondataavailable = function (ev) { if (ev.data && ev.data.size) audioChunks.push(ev.data); };
+    mediaRec.onstop = function () {
+      stopStream();
+      var blob = new Blob(audioChunks, { type: (mediaRec && mediaRec.mimeType) || mt || 'audio/webm' });
+      if (blob.size < 1200) { setMic(false); $('micStatus').textContent = 'No se grabó audio. Inténtalo otra vez.'; return; }
+      transcribeBlob(blob);
+    };
+    try { mediaRec.start(); } catch (e) { stopStream(); $('micStatus').textContent = 'No se pudo grabar. Escribe abajo 👇'; return; }
+    recording = true; recSecs = 0; setMic(true);
+    $('micStatus').textContent = '● Grabando 0:00 — toca para parar';
+    recTimer = setInterval(function () { recSecs++; if (recording) $('micStatus').textContent = '● Grabando ' + fmtSecs(recSecs) + ' — toca para parar'; }, 1000);
+  }
+  function stopStream() { if (mediaStream) { try { mediaStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} mediaStream = null; } }
+  function stopRec(silent) {
+    if (recTimer) { clearInterval(recTimer); recTimer = null; }
+    if (mediaRec && recording) {
+      recording = false; setMic(false);
+      if (silent) { try { mediaRec.onstop = function () { stopStream(); }; } catch (e) {} }   // al cerrar la hoja: parar sin transcribir
+      try { mediaRec.stop(); } catch (e) { stopStream(); }
+    } else { recording = false; setMic(false); stopStream(); }
+  }
   function toggleRec() { if (recording) stopRec(); else startRec(); }
+
+  function blobToB64(blob) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { var s = String(r.result); var i = s.indexOf(','); resolve(i !== -1 ? s.slice(i + 1) : s); };
+      r.onerror = function () { reject(new Error('No pude leer el audio')); };
+      r.readAsDataURL(blob);
+    });
+  }
+  async function transcribeBlob(blob) {
+    if (blob.size > 4.5 * 1024 * 1024) { $('micStatus').textContent = 'Audio demasiado largo. Graba tramos más cortos (≈15 min máx).'; return; }
+    $('micStatus').textContent = '⏳ Subiendo y transcribiendo…'; $('micBtn').disabled = true;
+    try {
+      var b64 = await blobToB64(blob);
+      var res = await aiCall('transcribe', { audio: b64, mime: blob.type });
+      var txt = (res.text || '').trim();
+      if (!txt) { $('micStatus').textContent = 'No se entendió el audio. Prueba de nuevo o escribe.'; return; }
+      var prev = $('voiceText').value.trim();
+      $('voiceText').value = prev ? (prev + ' ' + txt) : txt;
+      $('micStatus').textContent = '✓ Transcrito. Extrayendo eventos…';
+      await interpretVoice();
+      $('micStatus').textContent = 'Puedes grabar más, revisar abajo y guardar';
+    } catch (e) {
+      $('micStatus').textContent = '⚠️ ' + e.message;
+    } finally { $('micBtn').disabled = false; }
+  }
 
   function voiceLabel(ev) {
     if (ev.type === 'meal') return '🍽️ ' + (ev.nombre || 'Comida') + (ev.aceptacion ? ' · ' + ev.aceptacion.toLowerCase() : '') + ((ev.alimentos && ev.alimentos.length) ? ' (' + ev.alimentos.join(', ') + ')' : '');
