@@ -1214,13 +1214,18 @@
     toast(n === 1 ? '1 evento guardado' : n + ' eventos guardados');
   }
   // Encaja un valor devuelto por la IA al valor exacto del catálogo (tildes, "/ ", "( )")
-  function normTxt(s) { return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[\/(].*$/, '').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); }
+  function normBase(s) { return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+  function normTxt(s) { return normBase(s).replace(/[\/(].*$/, '').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); }   // solo el núcleo (antes de "/" o "(")
+  function normFull(s) { return normBase(s).replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }                          // texto completo
   function snapOne(val, list) {
     if (!val) return val;
     var nv = normTxt(val);
-    for (var i = 0; i < list.length; i++) { if (list[i] === val) return list[i]; }               // exacto
-    for (i = 0; i < list.length; i++) { if (normTxt(list[i]) === nv) return list[i]; }             // sin tildes / núcleo
-    for (i = 0; i < list.length; i++) { var na = normTxt(list[i]); if (nv.length > 3 && (na.indexOf(nv) !== -1 || nv.indexOf(na) !== -1)) return list[i]; } // contención
+    for (var i = 0; i < list.length; i++) { if (list[i] === val) return list[i]; }                 // exacto
+    for (i = 0; i < list.length; i++) { if (normTxt(list[i]) === nv) return list[i]; }             // sin tildes / núcleo igual
+    for (i = 0; i < list.length; i++) {                                                             // contención (incluye sinónimos tras "/")
+      var core = normTxt(list[i]), full = normFull(list[i]);
+      if (nv.length > 3 && (full.indexOf(nv) !== -1 || nv.indexOf(core) !== -1)) return list[i];
+    }
     return val;                                                                                     // no encaja: se conserva tal cual
   }
   function snapArr(x, list) { return arrOf(x).map(function (v) { return snapOne(v, list); }); }
