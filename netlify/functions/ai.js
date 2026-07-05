@@ -68,13 +68,15 @@ async function taskParse(p) {
     'Devuelve SOLO un objeto JSON válido, sin ningún texto antes o después, con esta forma exacta:\n' +
     '{ "eventos": [ { "type": "...", ...campos... } ], "resumen": "una frase" }\n\n' +
     'Cada evento tiene "type" que es uno de: "meal" (comida), "act" (actividad/juego/paseo/pantalla…), ' +
-    '"dys" (desajuste/rabieta/crisis/bloqueo/desregulación), "sleep" (sueño de anoche).\n' +
+    '"dys" (desajuste/rabieta/crisis/bloqueo/desregulación), "nap" (SIESTA diurna), "sleep" (SOLO el sueño nocturno de anoche).\n' +
+    'IMPORTANTE: si mencionan una siesta o dormir de día, usa "nap", nunca "sleep". "sleep" es exclusivamente el sueño de la noche.\n' +
     'Campos comunes opcionales: "time" (hora "HH:MM" 24h si la dicen), "moment" ("Mañana" | "Tarde" | "Noche"), "nota" (texto libre con detalles que no encajen).\n' +
     'Campos por tipo:\n' +
     '  meal: "nombre" (Desayuno/Comida/Merienda/Cena o lo que digan), "alimentos" (lista de textos), "aceptacion" (uno de: ' + (v.mealAcept || ['Comió bien', 'Con dificultad', 'Lo rechazó']).join(' / ') + ').\n' +
     '  act: "tipo" (preferible uno de: ' + (v.actTypes || []).join(' / ') + '), "lugar", "termino" (uno de: ' + (v.actTermino || ['Bien', 'Regular', 'Con desajuste']).join(' / ') + ').\n' +
     '  dys: "tipos" (lista, preferible de: ' + (v.dysTipos || []).join(' / ') + '), "antecedentes" (lista, qué pasó antes, preferible de: ' + (v.dysAnt || []).join(' / ') + '), ' +
     '"senales" (lista, preferible de: ' + (v.dysSenales || []).join(' / ') + '), "ayudo" (lista, qué ayudó, preferible de: ' + (v.dysAyudo || []).join(' / ') + '), "intensidad" (número 1-5).\n' +
+    '  nap: "start" (hora inicio "HH:MM" si la dicen), "end" (hora fin "HH:MM"), "calidad" (número 1-5). Si solo dicen la duración (ej. "3 horas") sin horas concretas, deja start/end vacíos y pon la duración en "nota".\n' +
     '  sleep: "bed" (hora se acostó "HH:MM"), "wake" (hora se despertó "HH:MM"), "calidad" (número 1-5).\n\n' +
     'MUY IMPORTANTE: en los campos con lista de opciones (aceptacion, termino, tipos, antecedentes, senales, ayudo), ' +
     'copia el valor EXACTO de la lista dada — mismas palabras, tildes y mayúsculas, sin reformular ni cambiar el tiempo verbal (ej. "Se tapa oídos", no "se tapó los oídos"; "Abrazo / presión", no "abrazo"). ' +

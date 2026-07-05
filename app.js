@@ -197,7 +197,7 @@
   }
 
   // ---------- summaries ----------
-  function napSummary(e) { var p = []; var d = durStr(e.start, e.end, false); if (d) p.push(d); if (e.calidad) p.push('calidad ' + e.calidad + '/5'); return { title: 'Siesta', sub: p.join(' · ') }; }
+  function napSummary(e) { var p = []; var d = durStr(e.start, e.end, false); if (d) p.push(d); if (e.calidad) p.push('calidad ' + e.calidad + '/5'); if (e.nota) p.push(e.nota); return { title: 'Siesta', sub: p.join(' · ') }; }
   function mealSummary(e) {
     var foods = (e.alimentos || []).map(function (f) { return (f.nuevo ? '★' : '') + f.nombre; });
     var sub = foods.length ? foods.join(', ') : 'sin alimentos'; if (e.aceptacion) sub += ' · ' + e.aceptacion.toLowerCase();
@@ -1142,14 +1142,13 @@
     if (!SR || recording) return;
     try { rec = new SR(); } catch (e) { return; }
     rec.lang = 'es-ES'; rec.interimResults = true; rec.continuous = true;
-    voiceBase = $('voiceText').value ? $('voiceText').value + ' ' : ''; voiceFinal = '';
+    voiceBase = $('voiceText').value ? $('voiceText').value.trim() + ' ' : '';
     rec.onresult = function (e) {
-      var interim = '';
-      for (var i = e.resultIndex; i < e.results.length; i++) {
-        var tr = e.results[i][0].transcript;
-        if (e.results[i].isFinal) voiceFinal += tr + ' '; else interim += tr;
-      }
-      $('voiceText').value = (voiceBase + voiceFinal + interim).replace(/\s+/g, ' ').trimStart();
+      // Reconstruye SIEMPRE desde todos los resultados (idempotente): evita que
+      // el motor duplique/triplique el texto al reemitir resultados.
+      var full = '';
+      for (var i = 0; i < e.results.length; i++) { full += e.results[i][0].transcript + (e.results[i].isFinal ? ' ' : ''); }
+      $('voiceText').value = (voiceBase + full).replace(/\s+/g, ' ').replace(/^\s+/, '');
     };
     rec.onerror = function (ev) { setMic(false); recording = false; if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') $('micStatus').textContent = 'Permiso de micro denegado. Escribe abajo 👇'; };
     rec.onend = function () { recording = false; setMic(false); };
@@ -1162,6 +1161,7 @@
     if (ev.type === 'meal') return '🍽️ ' + (ev.nombre || 'Comida') + (ev.aceptacion ? ' · ' + ev.aceptacion.toLowerCase() : '') + ((ev.alimentos && ev.alimentos.length) ? ' (' + ev.alimentos.join(', ') + ')' : '');
     if (ev.type === 'act') return '🚶 ' + (ev.tipo || 'Actividad') + (ev.lugar ? ' · ' + ev.lugar.toLowerCase() : '') + (ev.termino ? ' · terminó ' + ev.termino.toLowerCase() : '');
     if (ev.type === 'dys') return '⚡ ' + ((ev.tipos && ev.tipos.length) ? ev.tipos.join(', ') : 'Desajuste') + ((ev.antecedentes && ev.antecedentes.length) ? ' · tras ' + ev.antecedentes.join(', ').toLowerCase() : '');
+    if (ev.type === 'nap') return '😴 Siesta' + (ev.start ? ' · ' + ev.start + '→' + (ev.end || '?') : '') + (ev.calidad ? ' · calidad ' + ev.calidad + '/5' : '') + (ev.nota ? ' · ' + ev.nota : '');
     if (ev.type === 'sleep') return '🌙 Sueño' + (ev.calidad ? ' · calidad ' + ev.calidad + '/5' : '') + (ev.bed ? ' · ' + ev.bed + '→' + (ev.wake || '?') : '');
     return ev.type;
   }
@@ -1193,7 +1193,7 @@
           dysTipos: DYS.tipos, dysAnt: DYS.antecedentes, dysSenales: DYS.senales, dysAyudo: DYS.ayudo
         }
       });
-      voiceEvents = (res.eventos || []).filter(function (e) { return e && ['meal', 'act', 'dys', 'sleep'].indexOf(e.type) !== -1; });
+      voiceEvents = (res.eventos || []).filter(function (e) { return e && ['meal', 'act', 'dys', 'nap', 'sleep'].indexOf(e.type) !== -1; });
       renderVoicePreview();
     } catch (e) {
       $('voicePreview').innerHTML = '<div class="note-box err">⚠️ ' + esc(e.message) + '</div>';
@@ -1237,6 +1237,7 @@
     if (ev.type === 'meal') { base.nombre = ev.nombre || 'Comida'; base.alimentos = (ev.alimentos || []).map(function (nm) { return { nombre: String(nm) }; }); if (ev.aceptacion) base.aceptacion = snapOne(ev.aceptacion, MEAL_ACCEPT.map(function (m) { return m.v; })); }
     else if (ev.type === 'act') { base.tipo = ev.tipo ? snapOne(ev.tipo, ACT_TYPES) : 'Otra'; if (ev.lugar) base.lugar = snapOne(ev.lugar, ACT_LUGAR); if (ev.termino) base.termino = snapOne(ev.termino, ACT_TERMINO); base.compania = []; base.ambiente = []; base.senales = []; base.estrategias = []; }
     else if (ev.type === 'dys') { base.tipos = snapArr(ev.tipos, DYS.tipos); base.antecedentes = snapArr(ev.antecedentes, DYS.antecedentes); base.senales = snapArr(ev.senales, DYS.senales); base.sensorial = snapArr(ev.sensorial, DYS.sensorial); base.ayudo = snapArr(ev.ayudo, DYS.ayudo); if (ev.intensidad) base.intensidad = +ev.intensidad; base.completo = true; }
+    else if (ev.type === 'nap') { if (ev.start) base.start = ev.start; if (ev.end) base.end = ev.end; if (ev.calidad) base.calidad = +ev.calidad; base.moment = ev.moment || momentFromTime(ev.start) || 'Tarde'; }
     else if (ev.type === 'sleep') { if (ev.bed) base.bed = ev.bed; if (ev.wake) base.wake = ev.wake; if (ev.calidad) base.calidad = +ev.calidad; base.moment = 'Noche'; base.ayudas = []; }
     return base;
   }
