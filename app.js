@@ -1293,6 +1293,24 @@
     if (sleepAnoche && sleepAnoche <= 2) { score += 0.25; drivers.push('Durmió mal anoche (' + sleepAnoche + '/5)'); }
     else if (sleepAnoche && sleepAnoche >= 4) score -= 0.1;
     if (sleepAyer && sleepAyer <= 2) { score += 0.1; drivers.push('Anteanoche también durmió mal'); }
+    // v2 (Fase 8): sueño TOTAL de anoche frente a su propia media
+    var nightMin = sleepToday ? durMin(sleepToday.bed, sleepToday.wake, true) : null;
+    var nights = data.entries.filter(function (e) { return e.type === 'sleep'; }).map(function (e) { return durMin(e.bed, e.wake, true); }).filter(function (v) { return v != null; });
+    var avgNight = nights.length >= 5 ? nights.reduce(function (s, v) { return s + v; }, 0) / nights.length : null;
+    if (nightMin != null && avgNight && nightMin < avgNight - 60) { score += 0.15; drivers.push('Anoche durmió ' + fmtDur(nightMin) + ' — bastante menos que su media (' + fmtDur(Math.round(avgNight)) + ')'); }
+    // v2: calambres y despertar de esta noche
+    var calAnoche = sleepToday && sleepToday.eventosNoche ? sleepToday.eventosNoche.filter(function (x) { return x.tipo === 'Calambres'; }).length : 0;
+    if (calAnoche) { score += 0.15; drivers.push('Calambres esta noche (' + calAnoche + ')'); }
+    if (sleepToday && ((sleepToday.despertarEstado || []).indexOf('Lloro') !== -1 || (sleepToday.despertarEstado || []).indexOf('Reactivo') !== -1 || sleepToday.despertarComo === 'Llorando')) { score += 0.1; drivers.push('Despertó llorando / reactivo'); }
+    // v2: señales de aviso ya vistas HOY (sus precursoras)
+    var PRECURSORAS = ['Puntillas', 'Desequilibrio', 'Habla mal', 'Se dispara', 'Gritos', 'Loqui / como pelota'];
+    var sigHoy = [];
+    data.entries.forEach(function (e) { if (e.type === 'obs' && e.date === today) (e.senales || []).forEach(function (s) { if (PRECURSORAS.indexOf(s) !== -1 && sigHoy.indexOf(s) === -1) sigHoy.push(s); }); });
+    if (sigHoy.length) { score += 0.15; drivers.push('Señales de aviso hoy: ' + sigHoy.join(', ').toLowerCase()); }
+    // v2: cómo fue ayer (valoración global)
+    var valAyer = dayValoracion(yest);
+    if (valAyer === 'Difícil') { score += 0.1; drivers.push('Ayer fue un día difícil'); }
+    else if (valAyer === 'TODO BIEN') score -= 0.05;
     if (curLoad >= loadThr && curLoad > 0) { score += 0.2; drivers.push('La carga sensorial de hoy ya va alta'); }
     if (perfilHiper.length >= 2) { score += 0.1; drivers.push('Perfil hipersensible (' + perfilHiper.map(function (s) { return s.key.toLowerCase(); }).slice(0, 3).join(', ') + ')'); }
     drivers.push('Históricamente, la ' + peakMoment.toLowerCase() + ' es su franja más sensible');
@@ -1304,6 +1322,8 @@
 
     var tips = [];
     if (sleepAnoche && sleepAnoche <= 2) tips.push('Día más tranquilo: menos planes exigentes y más pausas, sobre todo por la ' + peakMoment.toLowerCase() + '.');
+    if (calAnoche) tips.push('Noche con calambres: día más suave, vigila la fatiga y no fuerces mucho ejercicio.');
+    if (sigHoy.length) tips.push('Ya hay señales de aviso: adelanta las estrategias que le funcionan (presión, tapones, rincón tranquilo) antes de que suba.');
     if (curLoad >= loadThr && curLoad > 0) tips.push('Programa un rato de calma (rincón tranquilo, presión profunda) antes de la ' + peakMoment.toLowerCase() + '.');
     if (perfil['Oído'] === 'Hiper') tips.push('Ten a mano cascos o auriculares por si hay sitios ruidosos.');
     if (perfil['Tacto'] === 'Hiper') tips.push('Ropa cómoda sin etiquetas; avisa antes de tocarle.');
@@ -1318,7 +1338,7 @@
     html += '<div class="pred-moments">' + r.byMoment.map(function (x) { return '<span class="pm pm-' + x.lv + '">' + momentEm(x.m) + ' ' + x.m + ' <b>' + x.lv + '</b></span>'; }).join('') + '</div>';
     html += '<div class="pred-sub">Por qué</div><ul class="pred-list">' + r.drivers.map(function (d) { return '<li>' + d + '</li>'; }).join('') + '</ul>';
     html += '<div class="pred-sub">Sugerencias</div><ul class="pred-list">' + r.tips.map(function (t) { return '<li>' + t + '</li>'; }).join('') + '</ul>';
-    html += '<div class="pred-note">Estimación orientativa a partir de tus patrones — no es diagnóstico. Con IA/backend será más precisa (predicción por horas e intervalos de confianza).</div></div>';
+    html += '<div class="pred-note">Estimación v2 a partir de SUS patrones: sueño total, calambres nocturnos, cómo despertó, señales de aviso del día y cómo fue ayer. Orientativa — no es diagnóstico.</div></div>';
     return html;
   }
   function renderAnotarAlert() {
@@ -1552,6 +1572,39 @@
     if (!w) { toast('Permite las ventanas emergentes para ver el informe'); return; }
     w.document.write(weekReportHtml(weekStartOf(histAnchor)));
     w.document.close();
+  }
+
+  // ---------- Informe mensual con IA (Fase 8): "el mes en 10 puntos" ----------
+  function bLite(s) { return esc(String(s)).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>'); }
+  function monthlyReportHtml(sum, res) {
+    var name = esc(data.child.name || ''), mes = esc(sum.mes || '');
+    var pts = (res.puntos || []).map(function (p) { return '<li>' + bLite(p) + '</li>'; }).join('');
+    var sug = (res.sugerencias || []).map(function (p) { return '<li>' + bLite(p) + '</li>'; }).join('');
+    var css = REPORT_CSS + '.mrep h2{font-size:14px;margin:18px 0 6px;color:#555}.mrep ol{margin:0;padding-left:22px}.mrep ol li{margin:7px 0;font-size:13.5px;line-height:1.5}.mrep ul{margin:0;padding-left:22px}.mrep ul li{margin:6px 0;font-size:13px;line-height:1.5;color:#444}.mrep .tit{font-size:15px;color:#3b6d11;font-weight:600;margin:10px 0 2px}.mrep .foot{color:#999;font-size:10.5px;margin-top:14px}';
+    return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Informe mensual · ' + name + '</title><style>' + css + '</style></head><body><div class="rep mrep">' +
+      '<div class="rep-head"><h1>Registro TEA — ' + name + '</h1><div class="sub">Informe del mes · ' + mes + ' · ' + sum.dias_con_registro + ' días con registro</div></div>' +
+      (res.titulo ? '<div class="tit">' + bLite(res.titulo) + '</div>' : '') +
+      '<h2>El mes en ' + (res.puntos || []).length + ' puntos</h2><ol>' + pts + '</ol>' +
+      (sug ? '<h2>Para probar</h2><ul>' + sug + '</ul>' : '') +
+      '<div class="foot">Generado con IA a partir del registro diario. Son observaciones y correlaciones, no un diagnóstico ni consejo médico.</div>' +
+      '<button class="pbtn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button></div></body></html>';
+  }
+  var monthlyBusy = false;
+  async function openMonthlyReport() {
+    if (monthlyBusy) return;
+    var sum = buildMonthSummary(histAnchor);
+    if (!sum.dias_con_registro) { toast('No hay registros en ese mes'); return; }
+    var w = window.open('', '_blank');   // abrir ANTES del await (si no, el navegador lo bloquea)
+    if (!w) { toast('Permite las ventanas emergentes para ver el informe'); return; }
+    w.document.write('<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Informe mensual</title></head><body style="font-family:system-ui;padding:26px;color:#666">🤖 Generando el informe de ' + esc(sum.mes) + ' con IA… (unos segundos)</body></html>');
+    monthlyBusy = true; var btn = $('monthlyBtn'); if (btn) { btn.disabled = true; btn.textContent = 'Generando…'; }
+    try {
+      var res = await aiCall('monthly', { summary: sum });
+      w.document.open(); w.document.write(monthlyReportHtml(sum, res)); w.document.close();
+    } catch (e) {
+      try { w.document.open(); w.document.write('<body style="font-family:system-ui;padding:26px">⚠️ ' + esc(e.message) + '</body>'); w.document.close(); } catch (e2) {}
+    }
+    monthlyBusy = false; if (btn) { btn.disabled = false; btn.textContent = '🤖 Mes en 10 puntos'; }
   }
 
   // ---------- Export CSV (Fase 7) ----------
@@ -1809,6 +1862,53 @@
     if (e.type === 'dys') { var a = e.linkedEventId ? byId(e.linkedEventId) : null; return { tipo: 'desajuste', desregulacion: e.tipos || [], momento: momentOf(e), intensidad: e.intensidad || null, antes: e.antecedentes || [], senales: e.senales || [], ayudo: e.ayudo || [], durante_actividad: a ? (a.tipo || null) : null }; }
     return null;
   }
+  // Fila-resumen de UN día para la IA (Fase 8): lo justo para que el modelo pueda
+  // cruzar días entre sí (calambres↔ejercicio, habla↔carga, sueño total↔día siguiente…).
+  var ACT_FISICA = ['Piscina', 'Deporte', 'Excursión / monte', 'Parque', 'Paseo'];
+  function dayAIRow(dt) {
+    var ents = data.entries.filter(function (e) { return e.date === dt; });
+    function sig() { var names = arguments, n = 0; ents.forEach(function (e) { if (e.type === 'obs') (e.senales || []).forEach(function (s) { for (var i = 0; i < names.length; i++) if (s === names[i]) n++; }); }); return n; }
+    var sleep = ents.find(function (e) { return e.type === 'sleep'; });
+    var fisica = []; ents.forEach(function (e) { if (e.type === 'act' && ACT_FISICA.indexOf(e.tipo) !== -1 && fisica.indexOf(e.tipo) === -1) fisica.push(e.tipo); });
+    var trans = []; ents.forEach(function (e) { if (e.type === 'act' && e.transiciones) TRANS_DEF.forEach(function (t) { var v = e.transiciones[t.k]; if (transBad(v)) trans.push(t.k + ':' + v); }); });
+    var pers = []; ents.forEach(function (e) { if (e.type === 'act') (e.compania || []).forEach(function (c) { if (c !== 'Solo' && pers.indexOf(c) === -1) pers.push(c); }); });
+    var rut = ents.filter(function (e) { return e.type === 'rutina' && e.valoracion; }).map(function (e) { return (e.tipo || '?') + ':' + e.valoracion; });
+    return {
+      fecha: dt,
+      valoracion_dia: dayValoracion(dt),
+      sueno_total_min: totalSleepMin(dt),
+      noche: sleep ? (sleep.calidadTexto || sleep.calidad || null) : null,
+      calambres_noche: sleep && sleep.eventosNoche ? sleep.eventosNoche.filter(function (x) { return x.tipo === 'Calambres'; }).length : 0,
+      calambres_dia: ents.filter(function (e) { return e.type === 'salud' && e.subtipo === 'Calambres'; }).length,
+      actividad_fisica: fisica,
+      desajustes: ents.filter(function (e) { return e.type === 'dys'; }).length,
+      habla_mal: sig('Habla mal'), habla_bien: sig('Habla bien', 'Habla muy bien'),
+      puntillas_desequilibrio: sig('Puntillas', 'Desequilibrio'),
+      gritos: sig('Gritos'), loqui_no_para: sig('Loqui / como pelota', 'No para'),
+      molestia_oido: sig('Molesta ruido', 'Se tapa oídos', 'Pide tapones'),
+      en_positivo: sig('TODO BIEN', 'Tranquilo bien', 'Alegre bien', 'Colabora', 'Con ganas'),
+      comidas_sofa_suelo: ents.filter(function (e) { return e.type === 'meal' && (e.lugar === 'Sofá' || e.lugar === 'Suelo'); }).length,
+      deposiciones: ents.filter(function (e) { return e.type === 'salud' && e.subtipo === 'Deposición'; }).length,
+      transiciones_dificiles: trans,
+      personas: pers,
+      rutinas: rut,
+      intento_fallido: ents.some(function (e) { return e.type === 'act' && e.intentoFallido; })
+    };
+  }
+  // Señales de estado en las 3h ANTERIORES a cada desajuste (mismo día): precursores.
+  function precursorPairs() {
+    var pairs = {};
+    data.entries.forEach(function (d) {
+      if (d.type !== 'dys' || !d.time) return;
+      var tm = toMin(d.time); if (tm == null) return;
+      data.entries.forEach(function (o) {
+        if (o.type !== 'obs' || o.date !== d.date || !o.time) return;
+        var om = toMin(o.time);
+        if (om != null && om < tm && om >= tm - 180) (o.senales || []).forEach(function (s) { pairs[s] = (pairs[s] || 0) + 1; });
+      });
+    });
+    return topN(pairs, 6);
+  }
   function buildAISummary() {
     var dys = data.entries.filter(function (e) { return e.type === 'dys'; });
     var acts = data.entries.filter(function (e) { return e.type === 'act'; });
@@ -1817,7 +1917,7 @@
     var byMoment = {}; MOMENTS.forEach(function (m) { byMoment[m.key] = dys.filter(function (e) { return momentOf(e) === m.key; }).length; });
     var byAct = {}; dys.forEach(function (e) { if (e.linkedEventId) { var a = byId(e.linkedEventId); if (a && a.tipo) byAct[a.tipo] = (byAct[a.tipo] || 0) + 1; } });
     var reg = runRegression();
-    var recientes = dates.slice(-10).map(function (dt) {
+    var recientes = dates.slice(-7).map(function (dt) {
       var ents = data.entries.filter(function (e) { return e.date === dt; });
       return { fecha: dt, eventos: ents.map(compactEntry).filter(Boolean) };
     });
@@ -1836,7 +1936,25 @@
       desajustes_por_actividad: topN(byAct, 8),
       efecto_sueno: sleepEffect(),
       factores_regresion: reg.ok ? reg.factors.slice(0, 8).map(function (f) { return { factor: f.name, peso: +f.w.toFixed(2) }; }) : null,
+      senales_previas_a_desajuste_3h: precursorPairs(),
+      dias: dates.slice(-60).map(dayAIRow),
       dias_recientes: recientes
+    };
+  }
+  // Resumen de UN mes para el informe mensual IA (Fase 8).
+  function buildMonthSummary(anchor) {
+    var d = new Date(anchor + 'T12:00:00'), y = d.getFullYear(), m = d.getMonth();
+    var dates = [], dim = new Date(y, m + 1, 0).getDate();
+    for (var i = 1; i <= dim; i++) { var ds = y + '-' + pad(m + 1) + '-' + pad(i); if (data.entries.some(function (e) { return e.date === ds; })) dates.push(ds); }
+    var dys = data.entries.filter(function (e) { return e.type === 'dys' && e.date >= dates[0] && e.date <= dates[dates.length - 1]; });
+    return {
+      nino: data.child.name,
+      mes: d.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }),
+      dias_con_registro: dates.length,
+      disparadores_top: topN(countBy(dys, function (e) { return e.antecedentes; }), 6),
+      que_ayuda_top: topN(countBy(dys, function (e) { return e.ayudo; }), 6),
+      senales_previas_a_desajuste_3h: precursorPairs(),
+      dias: dates.map(dayAIRow)
     };
   }
 
@@ -2006,6 +2124,7 @@
     if (ev.type === 'meal') return (ev.tomaExtra ? '🍪 ' : '🍽️ ') + (ev.nombre || 'Comida') + ((ev.alimentos && ev.alimentos.length) ? ' (' + ev.alimentos.join(', ') + ')' : '') + (ev.aceptacion ? ' · ' + ev.aceptacion.toLowerCase() : '') + (ev.lugar ? ' · ' + ev.lugar.toLowerCase() + (ev.tele ? ' + tele' : '') : '') + (ev.comoEstuvo ? ' · ' + ev.comoEstuvo.toLowerCase() : '');
     if (ev.type === 'act') { var q = (ev.compania || []).filter(function (c) { return c !== 'Solo'; }); var tr = ev.transiciones || {}; var extra = []; if (ev.primeraVez) extra.push('1ª vez'); if (ev.intentoFallido) extra.push('no fue'); TRANS_DEF.forEach(function (t) { if (transBad(tr[t.k])) extra.push(t.l.split(' ')[0].toLowerCase() + ' ' + tr[t.k].toLowerCase()); }); return '🚶 ' + (ev.tipo || 'Actividad') + (q.length ? ' · con ' + q.join(', ') : '') + (ev.lugar ? ' · ' + ev.lugar.toLowerCase() : '') + (ev.termino ? ' · terminó ' + ev.termino.toLowerCase() : '') + (extra.length ? ' · ' + extra.join(' · ') : ''); }
     if (ev.type === 'rutina') return (ev.tipo ? rutinaEm(ev.tipo) + ' ' + ev.tipo : '🧴 Rutina') + (ev.valoracion ? ' · ' + ev.valoracion.toLowerCase() : '');
+    if (ev.type === 'day') { var dvv = ev.valoracion ? dayValOf(snapOne(ev.valoracion, DAY_VAL.map(function (o) { return o.v; }))) : null; return '🌟 Valoración del día' + (dvv ? ': ' + dvv.em + ' ' + dvv.v : '') + (ev.nota ? ' · ' + ev.nota : ''); }
     if (ev.type === 'dys') return '⚡ ' + ((ev.tipos && ev.tipos.length) ? ev.tipos.join(', ') : 'Desajuste') + ((ev.antecedentes && ev.antecedentes.length) ? ' · tras ' + ev.antecedentes.join(', ').toLowerCase() : '');
     if (ev.type === 'obs') return '📝 ' + ((ev.senales && ev.senales.length) ? ev.senales.join(', ') : (ev.valencia || 'Estado')) + (ev.contexto ? ' · ' + ev.contexto : '');
     if (ev.type === 'salud') return (ev.subtipo ? saludEm(ev.subtipo) + ' ' + ev.subtipo : '🩺 Salud') + (ev.detalle ? ' · ' + ev.detalle : '');
@@ -2054,10 +2173,11 @@
           dondeDormir: DONDE_DORMIR, despertarComo: DESPERTAR_COMO, despertarEstado: DESPERTAR_ESTADO,
           nocheEventos: NOCHE_EVENTOS,
           obsSenales: obsSenalesFlat(), obsValencia: OBS_VALENCIA.map(function (o) { return o.v; }),
-          saludSubtipos: SALUD_SUBTIPOS.map(function (o) { return o.k; })
+          saludSubtipos: SALUD_SUBTIPOS.map(function (o) { return o.k; }),
+          dayVal: DAY_VAL.map(function (o) { return o.v; })
         }
       });
-      voiceEvents = (res.eventos || []).filter(function (e) { return e && ['meal', 'act', 'dys', 'obs', 'salud', 'rutina', 'nap', 'sleep'].indexOf(e.type) !== -1; });
+      voiceEvents = (res.eventos || []).filter(function (e) { return e && ['meal', 'act', 'dys', 'obs', 'salud', 'rutina', 'nap', 'sleep', 'day'].indexOf(e.type) !== -1; });
       renderVoicePreview();
     } catch (e) {
       $('voicePreview').innerHTML = '<div class="note-box err">⚠️ ' + esc(e.message) + '</div>';
@@ -2071,7 +2191,14 @@
     checks.forEach(function (c) {
       if (!c.checked) return;
       var ev = voiceEvents[+c.dataset.i]; if (!ev) return;
-      addEntry(ev.type, mapVoiceEvent(ev)); n++;
+      var mapped = mapVoiceEvent(ev);
+      if (ev.type === 'day') {   // solo puede haber UNA valoración por fecha: fusionar
+        var ex = getDayEntry(selectedDate);
+        if (ex) { if (mapped.valoracion) ex.valoracion = mapped.valoracion; if (mapped.nota) ex.nota = (ex.nota ? ex.nota + ' · ' : '') + mapped.nota; }
+        else addEntry('day', { valoracion: mapped.valoracion || null, nota: mapped.nota || '', moment: 'Noche' });
+        n++; return;
+      }
+      addEntry(ev.type, mapped); n++;
     });
     if (!n) { toast('Marca al menos un evento'); return; }
     save(); closeVoice(); renderHoy();
@@ -2121,6 +2248,7 @@
       base.ambiente = []; base.senales = []; base.estrategias = [];
     }
     else if (ev.type === 'rutina') { base.tipo = ev.tipo ? snapOne(ev.tipo, RUTINA_TIPOS.map(function (o) { return o.k; })) : 'Ducha'; if (ev.valoracion) base.valoracion = snapOne(ev.valoracion, RUTINA_VAL.map(function (o) { return o.v; })); }
+    else if (ev.type === 'day') { if (ev.valoracion) base.valoracion = snapOne(ev.valoracion, DAY_VAL.map(function (o) { return o.v; })); base.moment = 'Noche'; base.time = ''; }
     else if (ev.type === 'dys') { base.tipos = snapArr(ev.tipos, DYS.tipos); base.antecedentes = snapArr(ev.antecedentes, DYS.antecedentes); base.senales = snapArr(ev.senales, DYS.senales); base.sensorial = snapArr(ev.sensorial, DYS.sensorial); base.ayudo = snapArr(ev.ayudo, DYS.ayudo); if (ev.intensidad) base.intensidad = +ev.intensidad; base.completo = true; }
     else if (ev.type === 'obs') { base.senales = snapArr(ev.senales, obsSenalesFlat()); if (ev.valencia) base.valencia = snapOne(ev.valencia, OBS_VALENCIA.map(function (o) { return o.v; })); if (ev.contexto) base.contexto = String(ev.contexto); }
     else if (ev.type === 'salud') { base.subtipo = ev.subtipo ? snapOne(ev.subtipo, SALUD_SUBTIPOS.map(function (o) { return o.k; })) : 'Otro'; if (ev.detalle) base.detalle = snapOne(String(ev.detalle), DEPOSICION_DETALLE); }
@@ -2294,6 +2422,7 @@
     $('exportBtn').addEventListener('click', exportData);
     $('exportCsvBtn').addEventListener('click', exportCSV);
     $('reportBtn').addEventListener('click', openWeekReport);
+    $('monthlyBtn').addEventListener('click', openMonthlyReport);
     $('importBtn').addEventListener('click', function () { $('importInput').click(); });
     $('importInput').addEventListener('change', function () { if (this.files && this.files[0]) importFromFile(this.files[0]); this.value = ''; });
     $('clearBtn').addEventListener('click', function () { if (confirm('¿Borrar TODOS los registros?')) { data.entries = []; data.docs = []; save(); renderHistory(); } });

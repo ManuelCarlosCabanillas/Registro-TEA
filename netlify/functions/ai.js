@@ -68,7 +68,7 @@ async function taskParse(p) {
     'Devuelve SOLO un objeto JSON válido, sin ningún texto antes o después, con esta forma exacta:\n' +
     '{ "eventos": [ { "type": "...", ...campos... } ], "resumen": "una frase" }\n\n' +
     'Cada evento tiene "type" que es uno de: "meal" (comida), "act" (actividad/juego/paseo/pantalla…), ' +
-    '"dys" (desajuste/rabieta/crisis/bloqueo/desregulación), "obs" (observación de estado suelta), "salud" (cuerpo/salud: caca/POPO, pipí, calambres, palpitaciones, dolor, mocos, medicación), "rutina" (rutina de higiene/cuidado: ducha, bañera, dientes, pelo, uñas, vestirse), "nap" (SIESTA diurna), "sleep" (SOLO el sueño nocturno de anoche).\n' +
+    '"dys" (desajuste/rabieta/crisis/bloqueo/desregulación), "obs" (observación de estado suelta), "salud" (cuerpo/salud: caca/POPO, pipí, calambres, palpitaciones, dolor, mocos, medicación), "rutina" (rutina de higiene/cuidado: ducha, bañera, dientes, pelo, uñas, vestirse), "nap" (SIESTA diurna), "sleep" (SOLO el sueño nocturno de anoche), "day" (valoración GLOBAL del día — solo si el relato la dice explícitamente: "al final TODO BIEN", "un día difícil").\n' +
     'IMPORTANTE: si mencionan una siesta o dormir de día, usa "nap", nunca "sleep". "sleep" es exclusivamente el sueño de la noche.\n' +
     'IMPORTANTE (obs vs dys): usa "obs" para notas de ESTADO sueltas y frecuentes (cómo está en un momento: señales del cuerpo o del humor — puntillas, cansado, gritos puntuales, tranquilo, habla mal, con ganas…). Usa "dys" SOLO para EPISODIOS COMPLETOS de desregulación (una rabieta, crisis o bloqueo con desencadenante y desenlace). Si dudas y no hay un episodio claro de crisis, usa "obs". Un mismo relato puede generar varias "obs" encadenadas en distintos momentos.\n' +
     'Campos comunes opcionales: "time" (hora "HH:MM" 24h si la dicen), "moment" ("Mañana" | "Mediodía" | "Tarde" | "Noche"), "nota" (texto libre con detalles que no encajen).\n' +
@@ -85,6 +85,7 @@ async function taskParse(p) {
     '  obs: "senales" (lista de señales de estado, preferible de: ' + (v.obsSenales || []).join(' / ') + '), "valencia" (cómo está en general, uno de: ' + (v.obsValencia || ['Bien', 'Regular', 'Difícil']).join(' / ') + '), "contexto" (dónde / con quién, texto), "nota".\n' +
     '  salud: "subtipo" (uno de: ' + (v.saludSubtipos || ['Deposición', 'Pipí', 'Calambres', 'Palpitaciones', 'Dolor', 'Mocos / enfermedad', 'Medicación', 'Otro']).join(' / ') + '), "detalle" (para Deposición: Normal/Dura/Blanda/Diarrea; para Medicación: nombre o dosis), "nota". Ej.: "hizo caca a las 13:30" → salud subtipo Deposición time 13:30; "calambres en la cena" → salud subtipo Calambres.\n' +
     '  rutina: "tipo" (uno de: ' + (v.rutinaTipos || ['Ducha', 'Bañera', 'Dientes', 'Pelo', 'Uñas', 'Vestirse']).join(' / ') + '), "valoracion" (cómo fue, uno de: ' + (v.rutinaVal || ['Bien', 'Relaja', 'Regular', 'Reactivo']).join(' / ') + '). Ej.: "la ducha le relajó" → rutina tipo Ducha valoracion Relaja; "se puso reactivo al cortarle las uñas" → rutina tipo Uñas valoracion Reactivo.\n' +
+    '  day: "valoracion" (uno de: ' + (v.dayVal || ['TODO BIEN', 'Bien', 'Regular', 'Difícil']).join(' / ') + '), "nota" (una frase de resumen si la dicen). MÁXIMO un evento "day" por relato, al final de la lista. Ej.: "en general un día muy bueno" → day valoracion Bien; "al final del día, todo bien" → day valoracion TODO BIEN.\n' +
     '  nap: "start" (hora inicio "HH:MM" si la dicen), "end" (hora fin "HH:MM"), "calidad" (número 1-5), "acuesto" (cómo se acostó, uno de: ' + (v.napAcuesto || ['Fácil', 'Difícil', 'Tumbado sin dormir']).join(' / ') + '), "despertar" (cómo despertó, uno de: ' + (v.napDespertar || ['Solo', 'Le despierto', 'No hay manera']).join(' / ') + '), "fallida" (true si casi se duerme pero no llega a dormir). Si solo dicen la duración (ej. "3 horas") sin horas concretas, deja start/end vacíos y pon la duración en "nota".\n' +
     '  sleep (SOLO sueño nocturno): "bed" (hora en que se durmió "HH:MM"), "acuestoSofa" (hora en que se tumbó antes de dormirse), "wake" (hora en que se despertó por la mañana), "calidad" (número 1-5), "calidadTexto" (uno de: ' + (v.calidadTexto || ['Buena', '≈ Buena', 'Movida', 'Mala']).join(' / ') + '), "facilidad" (cómo se durmió, uno de: ' + (v.acuestoFacil || ['Fácil', 'Difícil', 'Se reactiva']).join(' / ') + '), "donde" (uno de: ' + (v.dondeDormir || ['Cama', 'Sofá', 'Carro', 'Otro']).join(' / ') + '), "despertarComo" (uno de: ' + (v.despertarComo || ['Solo', 'Le despierto', 'Llorando']).join(' / ') + '), "despertarEstado" (lista, uno o varios de: ' + (v.despertarEstado || ['Bien', 'Alegre', 'Cansado', 'Lloro', 'Reactivo']).join(' / ') + '), "eventosNoche" (lista de objetos {"tipo","hora"} — cosas que pasaron durante la noche; "tipo" uno de: ' + (v.nocheEventos || ['Calambres', 'Palpitaciones', 'Se despierta y vuelve', 'Se sienta', 'Mucho movimiento', 'Respiración / nariz', 'Llanto', 'Sudor', 'Otro']).join(' / ') + ', y "hora" "HH:MM" si la dicen — ej. calambres a las 2:00).\n\n' +
     'MUY IMPORTANTE: en los campos con lista de opciones (aceptacion, lugar, comoEstuvo, termino, tipos, antecedentes, senales, ayudo, compania, transiciones, valoracion), ' +
@@ -92,28 +93,62 @@ async function taskParse(p) {
     'Si nada de la lista encaja, no inventes una opción: pon ese detalle en "nota".\n' +
     'Reglas: crea SOLO eventos que el texto mencione explícitamente. No inventes datos. ' +
     'Si un desajuste ocurrió durante una actividad concreta, crea ambos eventos (act y dys) con el mismo "moment". ' +
+    'HORAS RELATIVAS: si dicen una referencia en vez de una hora ("al despertar" → Mañana; "después de comer" / "antes de la siesta" → Mediodía; "después de la siesta" / "al volver del parque" → Tarde; "antes de cenar" / "antes de dormir" → Noche), rellena "moment" con esa franja y deja "time" vacío. Si dicen una hora concreta, ponla en "time". ' +
+    'Un relato largo de un día entero puede generar MUCHOS eventos: devuélvelos ORDENADOS cronológicamente (por hora o por momento Mañana→Mediodía→Tarde→Noche). ' +
     'Usa el vocabulario permitido cuando encaje; si no, usa "nota". Momento por defecto si no lo dicen: "' + (p.moment || 'Tarde') + '".';
 
-  const res = await callClaude(MODEL_HAIKU, sys, [{ role: 'user', content: String(p.transcript || '') }], 1500, false);
+  const res = await callClaude(MODEL_HAIKU, sys, [{ role: 'user', content: String(p.transcript || '') }], 2000, false);
   if (res._err) return res;
   const parsed = extractJson(res.text);
   if (!parsed || !Array.isArray(parsed.eventos)) return { _err: 'parse', _detail: res.text };
   return { ok: true, eventos: parsed.eventos, resumen: parsed.resumen || '' };
 }
 
-// ---------- TAREA: analyze (conclusiones) ----------
+// ---------- TAREA: analyze (conclusiones v2) ----------
 async function taskAnalyze(p) {
   const sys =
     'Eres un analista de datos que ayuda a madres y padres de un niño/a con hipersensibilidad sensorial (TEA leve). ' +
-    'Te doy datos agregados y recientes de su registro diario. Escribe conclusiones en español, cálidas y accionables, ' +
-    'para padres (evita jerga clínica). Estructura con encabezados cortos:\n' +
-    '### Lo que más destaca\n### Posibles patrones y disparadores\n### Qué parece ayudar\n### Para probar esta semana\n\n' +
-    'Sé prudente: son correlaciones observadas, no un diagnóstico. No inventes nada que no esté en los datos. ' +
-    'Si hay pocos datos, dilo con honestidad. Máximo unas 280 palabras. Usa **negritas** para lo clave y listas con "- ".';
+    'Te doy datos agregados de su registro diario. La clave es el array "dias": una fila por día con valoración global, ' +
+    'sueño total (min), calidad de la noche, calambres (noche y día), actividad física, desajustes, contadores de señales ' +
+    '(habla_mal/habla_bien como termómetro del día, puntillas_desequilibrio, gritos, loqui_no_para, molestia_oido, en_positivo), ' +
+    'comidas en sofá/suelo, deposiciones, transiciones difíciles, personas y rutinas. CRUZA LOS DÍAS ENTRE SÍ e investiga estas hipótesis ' +
+    '(afirma solo lo que los números respalden, y da los números):\n' +
+    '1) Calambres (noche+día) ↔ actividad física de ese día o del anterior (piscina, deporte, monte).\n' +
+    '2) "Habla mal" ↔ carga del día (muchas salidas/actividades, transiciones difíciles) — el habla como termómetro.\n' +
+    '3) Señales precursoras: usa "senales_previas_a_desajuste_3h" (qué se vio en las 3h antes de los desajustes).\n' +
+    '4) Sueño total de una noche ↔ cómo fue el día SIGUIENTE (valoración, desajustes).\n' +
+    '5) Comidas en sofá/suelo ↔ días peores (¿síntoma del día, más que causa?).\n' +
+    '6) Transiciones (vuelta en coche, entrada a casa) y rutinas (¿la ducha relaja o activa?).\n' +
+    '7) Personas: ¿los días con según qué persona van mejor/peor?\n\n' +
+    'Escribe en español, cálido y accionable, para padres (sin jerga clínica). Estructura:\n' +
+    '### Lo que más destaca\n### Patrones que veo en tus datos\n### Qué parece ayudar\n### Para probar esta semana\n\n' +
+    'En "Patrones": solo los 3-5 hallazgos MÁS sólidos, cada uno con sus números (p. ej. "los 4 días con piscina hubo calambres esa noche, frente a 2 de los otros 26"). ' +
+    'Si una hipótesis no se sostiene con estos datos, no la menciones o dilo en una línea. Sé prudente: correlaciones, no diagnóstico. ' +
+    'No inventes nada que no esté en los datos. Máximo unas 330 palabras. Usa **negritas** para lo clave y listas con "- ".';
   const user = 'Estos son los datos del registro (JSON):\n\n' + JSON.stringify(p.summary);
-  const res = await callClaude(MODEL_SONNET, sys, [{ role: 'user', content: user }], 1300, true);
+  const res = await callClaude(MODEL_SONNET, sys, [{ role: 'user', content: user }], 1600, true);
   if (res._err) return res;
   return { ok: true, text: res.text };
+}
+
+// ---------- TAREA: monthly (el mes en 10 puntos) ----------
+async function taskMonthly(p) {
+  const sys =
+    'Eres un analista que escribe el INFORME MENSUAL del registro diario de un niño con hipersensibilidad sensorial (TEA leve), ' +
+    'para sus padres y para llevar a sus terapeutas. Te doy una fila por día ("dias") con: valoración global, sueño total, calidad de ' +
+    'la noche, calambres, actividad física, desajustes, señales (habla, puntillas, gritos, oído…), comidas, deposiciones, transiciones, personas y rutinas.\n' +
+    'Devuelve SOLO un objeto JSON válido, sin texto antes ni después:\n' +
+    '{ "titulo": "una frase que resuma el mes", "puntos": ["punto 1", … exactamente 10 puntos], "sugerencias": ["…", 3 sugerencias] }\n' +
+    'Cada punto: 1-2 frases, con números concretos del mes (días, conteos, horas). Cubre: cómo fue el mes en general (días buenos/difíciles), ' +
+    'el sueño (total, acuesto, eventos nocturnos), los calambres y su relación con la actividad física, el habla como termómetro, las señales ' +
+    'precursoras, las transiciones, las comidas, las rutinas, las personas, y algo que los padres quizá NO hayan visto (la correlación menos obvia que los datos respalden). ' +
+    'Español cálido y claro, sin jerga clínica, sin diagnóstico. Usa **negritas** para lo clave. No inventes: si algo no está en los datos, no lo digas.';
+  const user = 'Datos del mes (JSON):\n\n' + JSON.stringify(p.summary);
+  const res = await callClaude(MODEL_SONNET, sys, [{ role: 'user', content: user }], 1800, true);
+  if (res._err) return res;
+  const j = extractJson(res.text);
+  if (!j || !Array.isArray(j.puntos) || !j.puntos.length) return { _err: 'parse', _detail: res.text };
+  return { ok: true, titulo: j.titulo || '', puntos: j.puntos, sugerencias: Array.isArray(j.sugerencias) ? j.sugerencias : [] };
 }
 
 // ---------- TAREA: chat (conversar con los datos) ----------
@@ -169,6 +204,7 @@ exports.handler = async function (event) {
   try {
     if (p.task === 'parse') res = await taskParse(p);
     else if (p.task === 'analyze') res = await taskAnalyze(p);
+    else if (p.task === 'monthly') res = await taskMonthly(p);
     else if (p.task === 'chat') res = await taskChat(p);
     else if (p.task === 'transcribe') res = await taskTranscribe(p);
     else return err(400, 'Tarea desconocida');
