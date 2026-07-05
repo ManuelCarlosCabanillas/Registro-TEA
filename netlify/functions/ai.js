@@ -76,6 +76,9 @@ async function taskParse(p) {
     '  dys: "tipos" (lista, preferible de: ' + (v.dysTipos || []).join(' / ') + '), "antecedentes" (lista, qué pasó antes, preferible de: ' + (v.dysAnt || []).join(' / ') + '), ' +
     '"senales" (lista, preferible de: ' + (v.dysSenales || []).join(' / ') + '), "ayudo" (lista, qué ayudó, preferible de: ' + (v.dysAyudo || []).join(' / ') + '), "intensidad" (número 1-5).\n' +
     '  sleep: "bed" (hora se acostó "HH:MM"), "wake" (hora se despertó "HH:MM"), "calidad" (número 1-5).\n\n' +
+    'MUY IMPORTANTE: en los campos con lista de opciones (aceptacion, termino, tipos, antecedentes, senales, ayudo), ' +
+    'copia el valor EXACTO de la lista dada — mismas palabras, tildes y mayúsculas, sin reformular ni cambiar el tiempo verbal (ej. "Se tapa oídos", no "se tapó los oídos"; "Abrazo / presión", no "abrazo"). ' +
+    'Si nada de la lista encaja, no inventes una opción: pon ese detalle en "nota".\n' +
     'Reglas: crea SOLO eventos que el texto mencione explícitamente. No inventes datos. ' +
     'Si un desajuste ocurrió durante una actividad concreta, crea ambos eventos (act y dys) con el mismo "moment". ' +
     'Usa el vocabulario permitido cuando encaje; si no, usa "nota". Momento por defecto si no lo dicen: "' + (p.moment || 'Tarde') + '".';

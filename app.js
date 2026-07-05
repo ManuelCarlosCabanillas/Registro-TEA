@@ -1213,15 +1213,27 @@
     save(); closeVoice(); renderHoy();
     toast(n === 1 ? '1 evento guardado' : n + ' eventos guardados');
   }
+  // Encaja un valor devuelto por la IA al valor exacto del catálogo (tildes, "/ ", "( )")
+  function normTxt(s) { return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[\/(].*$/, '').replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); }
+  function snapOne(val, list) {
+    if (!val) return val;
+    var nv = normTxt(val);
+    for (var i = 0; i < list.length; i++) { if (list[i] === val) return list[i]; }               // exacto
+    for (i = 0; i < list.length; i++) { if (normTxt(list[i]) === nv) return list[i]; }             // sin tildes / núcleo
+    for (i = 0; i < list.length; i++) { var na = normTxt(list[i]); if (nv.length > 3 && (na.indexOf(nv) !== -1 || nv.indexOf(na) !== -1)) return list[i]; } // contención
+    return val;                                                                                     // no encaja: se conserva tal cual
+  }
+  function snapArr(x, list) { return arrOf(x).map(function (v) { return snapOne(v, list); }); }
+  function arrOf(x) { return Array.isArray(x) ? x.map(String) : (x ? [String(x)] : []); }
+
   function mapVoiceEvent(ev) {
     var base = { time: ev.time || '', moment: ev.moment || momentFromTime(ev.time) || nowMoment() };
     if (ev.nota) base.nota = ev.nota;
-    if (ev.type === 'meal') { base.nombre = ev.nombre || 'Comida'; base.alimentos = (ev.alimentos || []).map(function (nm) { return { nombre: String(nm) }; }); if (ev.aceptacion) base.aceptacion = ev.aceptacion; }
-    else if (ev.type === 'act') { base.tipo = ev.tipo || 'Otra'; if (ev.lugar) base.lugar = ev.lugar; if (ev.termino) base.termino = ev.termino; base.compania = []; base.ambiente = []; base.senales = []; base.estrategias = []; }
-    else if (ev.type === 'dys') { base.tipos = arr(ev.tipos); base.antecedentes = arr(ev.antecedentes); base.senales = arr(ev.senales); base.sensorial = arr(ev.sensorial); base.ayudo = arr(ev.ayudo); if (ev.intensidad) base.intensidad = +ev.intensidad; base.completo = true; }
+    if (ev.type === 'meal') { base.nombre = ev.nombre || 'Comida'; base.alimentos = (ev.alimentos || []).map(function (nm) { return { nombre: String(nm) }; }); if (ev.aceptacion) base.aceptacion = snapOne(ev.aceptacion, MEAL_ACCEPT.map(function (m) { return m.v; })); }
+    else if (ev.type === 'act') { base.tipo = ev.tipo ? snapOne(ev.tipo, ACT_TYPES) : 'Otra'; if (ev.lugar) base.lugar = snapOne(ev.lugar, ACT_LUGAR); if (ev.termino) base.termino = snapOne(ev.termino, ACT_TERMINO); base.compania = []; base.ambiente = []; base.senales = []; base.estrategias = []; }
+    else if (ev.type === 'dys') { base.tipos = snapArr(ev.tipos, DYS.tipos); base.antecedentes = snapArr(ev.antecedentes, DYS.antecedentes); base.senales = snapArr(ev.senales, DYS.senales); base.sensorial = snapArr(ev.sensorial, DYS.sensorial); base.ayudo = snapArr(ev.ayudo, DYS.ayudo); if (ev.intensidad) base.intensidad = +ev.intensidad; base.completo = true; }
     else if (ev.type === 'sleep') { if (ev.bed) base.bed = ev.bed; if (ev.wake) base.wake = ev.wake; if (ev.calidad) base.calidad = +ev.calidad; base.moment = 'Noche'; base.ayudas = []; }
     return base;
-    function arr(x) { return Array.isArray(x) ? x.map(String) : (x ? [String(x)] : []); }
   }
 
   function init() {
