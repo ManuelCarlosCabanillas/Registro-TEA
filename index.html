@@ -119,7 +119,20 @@
         <div id="saludList"></div>
       </section>
 
-      <p class="ver">Registro TEA · v19 · local + IA</p>
+      <section class="card">
+        <div class="card-head">🧴 <span>Rutinas del día</span></div>
+        <div class="quick-row wrap">
+          <button class="quick-btn" data-rutina="Ducha">🚿 Ducha</button>
+          <button class="quick-btn" data-rutina="Bañera">🛁 Bañera</button>
+          <button class="quick-btn" data-rutina="Dientes">🪥 Dientes</button>
+          <button class="quick-btn" data-rutina="Pelo">💇 Pelo</button>
+          <button class="quick-btn" data-rutina="Uñas">✂️ Uñas</button>
+          <button class="quick-btn" data-rutina="Vestirse">👕 Vestirse</button>
+        </div>
+        <div id="rutinaList"></div>
+      </section>
+
+      <p class="ver">Registro TEA · v20 · local + IA</p>
     </main>
 
     <main id="view-resumen" class="view" hidden>
@@ -270,8 +283,12 @@
         <div class="chips" id="actLugar"></div>
         <div class="field-label">Duración</div>
         <div class="chips" id="actDuracion"></div>
-        <div class="field-label">¿Con quién / compañía?</div>
+        <div class="field-label">¿Con quién? <span class="muted">(varios)</span></div>
         <div class="chips" id="actCompania"></div>
+        <div class="section-div">Salida, vuelta y entrada</div>
+        <div id="actTrans"></div>
+        <label class="check"><input type="checkbox" id="actPrimeraVez" /> Primera vez que hace esto</label>
+        <label class="check"><input type="checkbox" id="actIntentoFallido" /> Se intentó pero no consiguió ir</label>
         <div class="field-label">¿Qué pasó? / notas</div>
         <input type="text" id="actNota" placeholder="Opcional…" />
         <div class="section-div">Ánimo y regulación</div>
@@ -403,6 +420,33 @@
       <div class="sheet-foot">
         <button class="btn-ghost danger" id="saludDelete">Eliminar</button>
         <button class="btn-primary" id="saludSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: rutina diaria -->
+  <div class="sheet-backdrop z-obs" id="rutinaBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Rutina">
+      <div class="sheet-head">
+        <div><h2 id="rutinaTitle">Rutina</h2><div class="muted">Cómo fue</div></div>
+        <button class="icon-btn" id="rutinaClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field-label">Rutina</div>
+        <div class="chips" id="rutinaTipo"></div>
+        <div class="field-label">¿Cómo fue?</div>
+        <div class="chips" id="rutinaVal"></div>
+        <div class="field-label">¿Cuándo? — hora y/o momento</div>
+        <div class="time-moment">
+          <input type="time" id="rutinaTimeInput" />
+          <div class="chips" id="rutinaMoment"></div>
+        </div>
+        <div class="field-label">Nota</div>
+        <textarea id="rutinaNota" rows="2" placeholder="Opcional…"></textarea>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn-ghost danger" id="rutinaDelete">Eliminar</button>
+        <button class="btn-primary" id="rutinaSave">Guardar</button>
       </div>
     </div>
   </div>
