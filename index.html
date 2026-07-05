@@ -88,6 +88,7 @@
         <div class="card-head">🍽️ <span>Comidas</span></div>
         <div id="mealList"></div>
         <button class="btn-add-block" id="addMeal">＋ Añadir comida</button>
+        <button class="btn-add-block soft" id="quickToma">🍪 Toma rápida (algo suelto)</button>
       </section>
 
       <section class="card">
@@ -132,7 +133,7 @@
         <div id="rutinaList"></div>
       </section>
 
-      <p class="ver">Registro TEA · v20 · local + IA</p>
+      <p class="ver">Registro TEA · v21 · local + IA</p>
     </main>
 
     <main id="view-resumen" class="view" hidden>
@@ -230,6 +231,11 @@
         <div class="food-list" id="foodChips"></div>
         <div class="field-label">¿Cómo fue en general?</div>
         <div class="chips" id="mealAcceptChips"></div>
+        <div class="field-label">¿Dónde comió?</div>
+        <div class="chips" id="mealLugar"></div>
+        <label class="check"><input type="checkbox" id="mealTele" /> Con la tele / pantalla puesta</label>
+        <div class="field-label">¿Cómo estuvo durante la comida?</div>
+        <div class="chips" id="mealComo"></div>
         <p class="hint2">Toca un alimento para su detalle (cantidad, textura, si es nuevo…).</p>
       </div>
       <div class="sheet-foot">

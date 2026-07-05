@@ -2,7 +2,7 @@
   'use strict';
 
   var STORE_KEY = 'appTEA.v1';
-  var DATA_VERSION = 15;
+  var DATA_VERSION = 16;
 
   // ===== Config Supabase (claves públicas de cliente) =====
   var SUPABASE_URL = 'https://ntsgnvfmvlokujmddyjj.supabase.co';
@@ -70,6 +70,14 @@
   var DEPOSICION_DETALLE = ['Normal', 'Dura', 'Blanda', 'Diarrea'];
   function saludEm(sub) { var f = SALUD_SUBTIPOS.find(function (x) { return x.k === sub; }); return f ? f.em : '🩺'; }
   var MEAL_ACCEPT = [{ v: 'Comió bien', l: '✓ Comió bien' }, { v: 'Con dificultad', l: '~ Con dificultad' }, { v: 'Lo rechazó', l: '✕ Lo rechazó' }];
+  // ----- Comidas al nivel real (Fase 5) -----
+  var MEAL_LUGAR = ['Mesa', 'Suelo', 'Sofá', 'Coche', 'Parque', 'Bar', 'Otro'];
+  var MEAL_COMO = [
+    { v: 'Tranquilo', em: '🙂', l: '🙂 Tranquilo' }, { v: 'Jugando', em: '🧸', l: '🧸 Jugando' },
+    { v: 'Activado', em: '⚡', l: '⚡ Activado' }, { v: 'Loco', em: '🌪️', l: '🌪️ Loco' }
+  ];
+  function mealComoEm(v) { var f = MEAL_COMO.find(function (x) { return x.v === v; }); return f ? f.em : ''; }
+  function mealComoBad(v) { return v === 'Activado' || v === 'Loco'; }
 
   var ACT_TYPES = ['Juego con mamá', 'Juego con papá', 'Juego con otro adulto', 'Juego con otros niños', 'Juego solo', 'Paseo', 'Deporte', 'Parque', 'Piscina', 'Excursión / monte', 'Estudio / deberes', 'Colegio', 'Terapia', 'Médico', 'Pantalla', 'Llamada / vídeo', 'Música', 'Lectura / cuento', 'Manualidades', 'Comida en familia', 'Rutina de dormir', 'Visita / familia', 'Supermercado', 'Otra'];
   var ACT_LUGAR = ['Casa', 'Calle', 'Cole', 'Casa de otros', 'Aire libre', 'Coche', 'Otro'];
@@ -121,7 +129,7 @@
     cantidad: ['Todo', 'La mitad', 'Un poco', 'Nada'],
     sensorial: ['Textura', 'Olor', 'Temperatura', 'Mezcla', 'Color']
   };
-  var SEED_FOODS = ['Pan', 'Arroz', 'Pasta', 'Pollo', 'Ternera', 'Pescado', 'Huevo', 'Patata', 'Plátano', 'Manzana', 'Yogur', 'Leche', 'Queso', 'Galletas', 'Zumo', 'Agua', 'Cereales', 'Tomate', 'Zanahoria'];
+  var SEED_FOODS = ['Pan blanco', 'Pan de centeno', 'Arroz', 'Pasta', 'Trigo sarraceno', 'Pollo', 'Pollo hervido', 'Pavo', 'Ternera', 'Secreto', 'Jamón serrano', 'Pescado', 'Huevos hervidos', 'Huevo', 'Patata', 'Brócoli', 'Zanahoria', 'Tomate', 'Aguacate', 'Sopa', 'Plátano', 'Manzana', 'Fresas', 'Melocotón', 'Paraguaya', 'Sandía', 'Nueces', 'Almendras', 'Anacardos', 'Yogur', 'Queso', 'Leche', 'Horchata', 'Zumo de naranja', 'Helado', 'Galletas', 'Chuches', 'Cereales', 'Agua'];
 
   var DYS = {
     tipos: ['Rabieta', 'Crisis / desbordamiento', 'Bloqueo (se apaga)', 'Bucle / perseveración', 'Stimming intenso', 'Huida / evitación', 'Agresión / autoagresión', 'Llanto / ansiedad', 'Otro'],
@@ -171,6 +179,13 @@
       d.entries.forEach(function (e) { if (e.type === 'act' && e.tipo === 'Compras') e.tipo = 'Supermercado'; });
     }
     if (!d.child.personas) d.child.personas = SEED_PERSONAS.slice();
+    // v16 (Fase 5 — Comidas reales): sumar el repertorio real al banco de alimentos
+    // sin perder los que ya tuviera el usuario (unión sin duplicar, sin distinguir mayúsculas).
+    if ((d.version || 0) < 16) {
+      if (!d.bank) d.bank = [];
+      var low = d.bank.map(function (x) { return String(x).toLowerCase(); });
+      SEED_FOODS.forEach(function (f) { if (low.indexOf(f.toLowerCase()) === -1) { d.bank.push(f); low.push(f.toLowerCase()); } });
+    }
     d.version = DATA_VERSION;
     return d;
   }
@@ -375,8 +390,11 @@
   }
   function mealSummary(e) {
     var foods = (e.alimentos || []).map(function (f) { return (f.nuevo ? '★' : '') + f.nombre; });
-    var sub = foods.length ? foods.join(', ') : 'sin alimentos'; if (e.aceptacion) sub += ' · ' + e.aceptacion.toLowerCase();
-    return { title: e.nombre || 'Comida', sub: sub };
+    var s = [foods.length ? foods.join(', ') : 'sin alimentos'];
+    if (e.aceptacion) s.push(e.aceptacion.toLowerCase());
+    if (e.lugar) s.push(e.lugar.toLowerCase() + (e.tele ? ' + tele' : ''));
+    if (e.comoEstuvo) s.push(mealComoEm(e.comoEstuvo) + ' ' + e.comoEstuvo.toLowerCase());
+    return { title: (e.tomaExtra ? '🍪 ' : '') + (e.nombre || 'Comida'), sub: s.join(' · '), warn: mealComoBad(e.comoEstuvo) };
   }
   function actSummary(e) {
     var s = [];
@@ -472,9 +490,17 @@
     momentPicker('mealTime', 'mealMoment', m);
     renderFoodChips();
     singleGroup('mealAcceptChips', MEAL_ACCEPT, m, 'aceptacion');
+    singleGroup('mealLugar', MEAL_LUGAR, m, 'lugar');
+    $('mealTele').checked = !!m.tele;
+    singleGroup('mealComo', MEAL_COMO, m, 'comoEstuvo');
     $('mealBackdrop').hidden = false;
   }
-  function closeMeal() { var m = byId(openMeal); if (m && !m.nombre && (!m.alimentos || !m.alimentos.length) && !m.aceptacion) removeEntry(openMeal); $('mealBackdrop').hidden = true; openMeal = null; renderHoy(); }
+  function quickTomaExtra() {
+    var e = addEntry('meal', { nombre: 'Toma', tomaExtra: true, time: nowTime(), moment: nowMoment(), alimentos: [] });
+    save(); renderHoy(); openMealSheet(e.id);
+    setTimeout(function () { var fi = $('foodInput'); if (fi) fi.focus(); }, 60);
+  }
+  function closeMeal() { var m = byId(openMeal); if (m && !m.nombre && (!m.alimentos || !m.alimentos.length) && !m.aceptacion && !m.lugar && !m.comoEstuvo && !m.tomaExtra) removeEntry(openMeal); $('mealBackdrop').hidden = true; openMeal = null; renderHoy(); }
   function renderBank() { fill($('foodbank'), data.bank.slice().sort().map(function (n) { var o = document.createElement('option'); o.value = n; return o; })); }
   function addFood(name) {
     name = (name || '').trim(); if (!name) return; var m = byId(openMeal); if (!m) return; if (!m.alimentos) m.alimentos = [];
@@ -1014,6 +1040,30 @@
     }
     return html;
   }
+  function mealAnalysisHtml() {
+    var meals = data.entries.filter(function (e) { return e.type === 'meal'; });
+    var conComo = meals.filter(function (e) { return e.comoEstuvo; });
+    var conLugar = meals.filter(function (e) { return e.lugar; });
+    if (conComo.length < 3 && conLugar.length < 3) return '';
+    var html = '<div class="an-h">🍽️ Comidas</div>';
+    if (conComo.length >= 3) {
+      var activadas = conComo.filter(function (e) { return mealComoBad(e.comoEstuvo); }).length;
+      var teleN = meals.filter(function (e) { return e.tele; }).length;
+      html += '<div class="kpis">' +
+        '<div class="kpi"><div class="n' + (activadas ? ' warn' : '') + '">' + Math.round(activadas / conComo.length * 100) + '%</div><div class="l">comidas activado / loco</div></div>' +
+        '<div class="kpi"><div class="n">' + teleN + '</div><div class="l">comidas con tele</div></div>' +
+        '</div>';
+    }
+    if (conLugar.length >= 3) {
+      var byLugar = {}; conLugar.forEach(function (e) { byLugar[e.lugar] = (byLugar[e.lugar] || 0) + 1; });
+      html += '<div class="an-sub">Dónde come</div><div class="card-an">' + barList(topN(byLugar, 8), false) + '</div>';
+      var mix = {};
+      conLugar.filter(function (e) { return e.comoEstuvo; }).forEach(function (e) { if (!mix[e.lugar]) mix[e.lugar] = { bad: 0, tot: 0 }; mix[e.lugar].tot++; if (mealComoBad(e.comoEstuvo)) mix[e.lugar].bad++; });
+      var rows = Object.keys(mix).filter(function (l) { return mix[l].tot >= 2; }).map(function (l) { return { k: l, v: Math.round(mix[l].bad / mix[l].tot * 100) }; }).sort(function (a, b) { return b.v - a.v; });
+      if (rows.length) html += '<div class="an-sub">Activación por lugar de comida (% activado/loco)</div><div class="card-an">' + barList(rows, true) + '</div>';
+    }
+    return html;
+  }
   function dysByDate() { var m = {}; data.entries.forEach(function (e) { if (e.type === 'dys') m[e.date] = (m[e.date] || 0) + 1; }); return m; }
   function sleepEffect() {
     var sq = sleepQualityByDate(), dd = dysByDate(), bad = [], good = [];
@@ -1265,6 +1315,9 @@
     // personas, transiciones y rutinas (Fase 4)
     html += actAnalysisHtml();
 
+    // comidas (Fase 5)
+    html += mealAnalysisHtml();
+
     // por momento
     var byMoment = MOMENTS.map(function (m) { return { k: m.key, v: dys.filter(function (e) { return momentOf(e) === m.key; }).length }; });
     html += '<div class="an-h">Desajustes por momento del día</div><div class="card-an">' + barList(byMoment, true) + '</div>';
@@ -1482,7 +1535,7 @@
     if (e.type === 'nap') return { tipo: 'siesta', momento: momentOf(e), inicio: e.start || null, fin: e.end || null, calidad: e.calidad || null, fallida: !!e.fallida };
     if (e.type === 'obs') return { tipo: 'observacion', momento: momentOf(e), hora: e.time || null, senales: e.senales || [], valencia: e.valencia || null, contexto: e.contexto || null };
     if (e.type === 'salud') return { tipo: 'salud', subtipo: e.subtipo || null, momento: momentOf(e), hora: e.time || null, detalle: e.detalle || null };
-    if (e.type === 'meal') return { tipo: 'comida', nombre: e.nombre || 'comida', momento: momentOf(e), aceptacion: e.aceptacion || null, alimentos: (e.alimentos || []).map(function (f) { return f.nombre; }) };
+    if (e.type === 'meal') return { tipo: 'comida', nombre: e.nombre || 'comida', momento: momentOf(e), aceptacion: e.aceptacion || null, lugar: e.lugar || null, tele: !!e.tele, como_estuvo: e.comoEstuvo || null, toma_suelta: !!e.tomaExtra, alimentos: (e.alimentos || []).map(function (f) { return f.nombre; }) };
     if (e.type === 'act') { var tr = e.transiciones || {}; return { tipo: 'actividad', actividad: e.tipo || null, momento: momentOf(e), lugar: e.lugar || null, con_quien: (e.compania || []).filter(function (c) { return c !== 'Solo'; }), termino: e.termino || null, primera_vez: !!e.primeraVez, intento_fallido: !!e.intentoFallido, transiciones: { salida: tr.salida || null, vuelta: tr.vuelta || null, entrada: tr.entrada || null }, con_desajuste: actHasDys(e) }; }
     if (e.type === 'rutina') return { tipo: 'rutina', rutina: e.tipo || null, momento: momentOf(e), hora: e.time || null, valoracion: e.valoracion || null };
     if (e.type === 'dys') { var a = e.linkedEventId ? byId(e.linkedEventId) : null; return { tipo: 'desajuste', desregulacion: e.tipos || [], momento: momentOf(e), intensidad: e.intensidad || null, antes: e.antecedentes || [], senales: e.senales || [], ayudo: e.ayudo || [], durante_actividad: a ? (a.tipo || null) : null }; }
@@ -1682,7 +1735,7 @@
   }
 
   function voiceLabel(ev) {
-    if (ev.type === 'meal') return '🍽️ ' + (ev.nombre || 'Comida') + (ev.aceptacion ? ' · ' + ev.aceptacion.toLowerCase() : '') + ((ev.alimentos && ev.alimentos.length) ? ' (' + ev.alimentos.join(', ') + ')' : '');
+    if (ev.type === 'meal') return (ev.tomaExtra ? '🍪 ' : '🍽️ ') + (ev.nombre || 'Comida') + ((ev.alimentos && ev.alimentos.length) ? ' (' + ev.alimentos.join(', ') + ')' : '') + (ev.aceptacion ? ' · ' + ev.aceptacion.toLowerCase() : '') + (ev.lugar ? ' · ' + ev.lugar.toLowerCase() + (ev.tele ? ' + tele' : '') : '') + (ev.comoEstuvo ? ' · ' + ev.comoEstuvo.toLowerCase() : '');
     if (ev.type === 'act') { var q = (ev.compania || []).filter(function (c) { return c !== 'Solo'; }); var tr = ev.transiciones || {}; var extra = []; if (ev.primeraVez) extra.push('1ª vez'); if (ev.intentoFallido) extra.push('no fue'); TRANS_DEF.forEach(function (t) { if (transBad(tr[t.k])) extra.push(t.l.split(' ')[0].toLowerCase() + ' ' + tr[t.k].toLowerCase()); }); return '🚶 ' + (ev.tipo || 'Actividad') + (q.length ? ' · con ' + q.join(', ') : '') + (ev.lugar ? ' · ' + ev.lugar.toLowerCase() : '') + (ev.termino ? ' · terminó ' + ev.termino.toLowerCase() : '') + (extra.length ? ' · ' + extra.join(' · ') : ''); }
     if (ev.type === 'rutina') return (ev.tipo ? rutinaEm(ev.tipo) + ' ' + ev.tipo : '🧴 Rutina') + (ev.valoracion ? ' · ' + ev.valoracion.toLowerCase() : '');
     if (ev.type === 'dys') return '⚡ ' + ((ev.tipos && ev.tipos.length) ? ev.tipos.join(', ') : 'Desajuste') + ((ev.antecedentes && ev.antecedentes.length) ? ' · tras ' + ev.antecedentes.join(', ').toLowerCase() : '');
@@ -1723,7 +1776,7 @@
         moment: nowMoment(),
         today: selectedDate,
         vocab: {
-          mealAcept: MEAL_ACCEPT.map(function (m) { return m.v; }),
+          mealAcept: MEAL_ACCEPT.map(function (m) { return m.v; }), mealLugar: MEAL_LUGAR, mealComo: MEAL_COMO.map(function (m) { return m.v; }),
           actTypes: ACT_TYPES, actTermino: ACT_TERMINO,
           personas: personaNames(), actSalida: ACT_SALIDA, actVuelta: ACT_VUELTA, actEntrada: ACT_ENTRADA,
           rutinaTipos: RUTINA_TIPOS.map(function (o) { return o.k; }), rutinaVal: RUTINA_VAL.map(function (o) { return o.v; }),
@@ -1777,7 +1830,15 @@
   function mapVoiceEvent(ev) {
     var base = { time: ev.time || '', moment: ev.moment || momentFromTime(ev.time) || nowMoment() };
     if (ev.nota) base.nota = ev.nota;
-    if (ev.type === 'meal') { base.nombre = ev.nombre || 'Comida'; base.alimentos = (ev.alimentos || []).map(function (nm) { return { nombre: String(nm) }; }); if (ev.aceptacion) base.aceptacion = snapOne(ev.aceptacion, MEAL_ACCEPT.map(function (m) { return m.v; })); }
+    if (ev.type === 'meal') {
+      base.nombre = ev.nombre || 'Comida';
+      base.alimentos = (ev.alimentos || []).map(function (nm) { return { nombre: String(nm) }; });
+      if (ev.aceptacion) base.aceptacion = snapOne(ev.aceptacion, MEAL_ACCEPT.map(function (m) { return m.v; }));
+      if (ev.lugar) base.lugar = snapOne(ev.lugar, MEAL_LUGAR);
+      if (ev.tele) base.tele = true;
+      if (ev.comoEstuvo) base.comoEstuvo = snapOne(ev.comoEstuvo, MEAL_COMO.map(function (m) { return m.v; }));
+      if (ev.tomaExtra || ev.toma_suelta) base.tomaExtra = true;
+    }
     else if (ev.type === 'act') {
       base.tipo = ev.tipo ? snapOne(ev.tipo, ACT_TYPES) : 'Otra';
       if (ev.lugar) base.lugar = snapOne(ev.lugar, ACT_LUGAR);
@@ -1830,6 +1891,7 @@
     $('addDys').addEventListener('click', function () { var e = addEntry('dys', { moment: nowMoment(), tipos: [], antecedentes: [], senales: [], sensorial: [], ayudo: [], completo: false }); openDys(e.id, false); });
     $('addNap').addEventListener('click', function () { var e = addEntry('nap', { moment: 'Tarde' }); openNapSheet(e.id); });
     $('addMeal').addEventListener('click', function () { var e = addEntry('meal', { nombre: '', alimentos: [] }); openMealSheet(e.id); });
+    $('quickToma').addEventListener('click', quickTomaExtra);
     $('addActivity').addEventListener('click', function () { var e = addEntry('act', { compania: [], ambiente: [], senales: [], estrategias: [] }); openActSheet(e.id); });
     $('addObs').addEventListener('click', function () { var e = addEntry('obs', { time: nowTime(), moment: nowMoment(), senales: [] }); openObsSheet(e.id); });
 
@@ -1905,6 +1967,7 @@
 
     // meal sheet
     $('mealName').addEventListener('input', function () { var m = byId(openMeal); if (m) { m.nombre = this.value; save(); } });
+    $('mealTele').addEventListener('change', function () { var m = byId(openMeal); if (m) { m.tele = this.checked; save(); } });
     $('mealTime').addEventListener('change', function () { var m = byId(openMeal); if (m) { m.time = this.value; if (this.value) m.moment = momentFromTime(this.value); save(); momentPicker('mealTime', 'mealMoment', m); } });
     $('foodAdd').addEventListener('click', function () { addFood($('foodInput').value); $('foodInput').value = ''; $('foodInput').focus(); });
     $('foodInput').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addFood($('foodInput').value); $('foodInput').value = ''; } });
