@@ -780,6 +780,163 @@
     return '<div class="mini-sheet">' + rows.map(function (r) { return '<div class="ms-row"><span class="ms-k">' + r[0] + ' ' + r[1] + '</span><span class="ms-v">' + esc(r[2]) + '</span></div>'; }).join('') + '</div>';
   }
 
+  // ---------- Repaso del día: cuestionario inteligente (Fase 9) ----------
+  // Motor determinista de huecos: compara el día con los patrones históricos del
+  // propio niño (sus frecuencias de los últimos 60 días) y pregunta SOLO lo pertinente.
+  function histStats() {
+    var t = selectedDate;
+    var dates = Object.keys(data.entries.reduce(function (m, e) { if (e.date !== t) m[e.date] = 1; return m; }, {})).sort().slice(-60);
+    var n = dates.length;
+    function dayHas(d, fn) { return data.entries.some(function (e) { return e.date === d && fn(e); }); }
+    function frac(fn) { return n ? dates.filter(function (d) { return dayHas(d, fn); }).length / n : 0; }
+    var mealMoment = {};
+    MOMENTS.forEach(function (m) { mealMoment[m.key] = frac(function (e) { return e.type === 'meal' && momentOf(e) === m.key; }); });
+    var actCount = {};
+    data.entries.forEach(function (e) { if (e.type === 'act' && e.tipo && e.date !== t) actCount[e.tipo] = (actCount[e.tipo] || 0) + 1; });
+    return {
+      n: n,
+      depo: frac(function (e) { return e.type === 'salud' && e.subtipo === 'Deposición' && e.detalle !== 'No hizo'; }),
+      nap: frac(function (e) { return e.type === 'nap'; }),
+      bano: frac(function (e) { return e.type === 'rutina' && (e.tipo === 'Ducha' || e.tipo === 'Bañera'); }),
+      mealMoment: mealMoment,
+      topActs: topN(actCount, 6).map(function (x) { return x.k; })
+    };
+  }
+  var MEAL_BY_MOMENT = { 'Mañana': 'Desayuno', 'Mediodía': 'Comida', 'Tarde': 'Merienda', 'Noche': 'Cena' };
+  var MOMENT_ART = { 'Mañana': 'la mañana', 'Mediodía': 'el mediodía', 'Tarde': 'la tarde', 'Noche': 'la noche' };
+  function buildRepasoQuestions() {
+    var t = selectedDate, st = histStats();
+    var ents = data.entries.filter(function (e) { return e.date === t; });
+    function has(type, fn) { return ents.some(function (e) { return e.type === type && (!fn || fn(e)); }); }
+    // ¿Qué momentos han pasado ya? (en un día anterior, todos)
+    var nowH = (t === todayKey()) ? new Date().getHours() : 24;
+    var pasado = { 'Mañana': nowH >= 13, 'Mediodía': nowH >= 16, 'Tarde': nowH >= 20, 'Noche': nowH >= 22 };
+    var qs = [];
+    // 1) sueño de anoche
+    var sleep = ents.find(function (e) { return e.type === 'sleep'; });
+    if (!sleep || (!sleep.bed && !sleep.wake)) qs.push({ id: 'sleep' });
+    // 2) POPO casi diario y hoy sin apuntar
+    if (st.n >= 7 && st.depo >= 0.7 && nowH >= 16 && !has('salud', function (e) { return e.subtipo === 'Deposición'; })) qs.push({ id: 'popo', pct: Math.round(st.depo * 100) });
+    // 3) siesta habitual y hoy nada
+    if (st.n >= 7 && st.nap >= 0.6 && nowH >= 17 && !has('nap')) qs.push({ id: 'siesta', pct: Math.round(st.nap * 100) });
+    // 4) momentos ya pasados sin NINGÚN registro (máx 2, los primeros)
+    var vacios = MOMENTS.filter(function (m) { return m.key !== 'Noche' && pasado[m.key] && !ents.some(function (e) { return e.type !== 'day' && momentOf(e) === m.key; }); }).slice(0, 2);
+    vacios.forEach(function (m) { qs.push({ id: 'momento', moment: m.key, acts: st.topActs }); });
+    // 5) comida que falta donde casi siempre come (máx 1, sin repetir un momento ya preguntado)
+    var vk = vacios.map(function (m) { return m.key; });
+    MOMENTS.filter(function (m) { return pasado[m.key] && (st.mealMoment[m.key] || 0) >= 0.6 && vk.indexOf(m.key) === -1 && !ents.some(function (e) { return e.type === 'meal' && momentOf(e) === m.key; }); })
+      .slice(0, 1).forEach(function (m) { qs.push({ id: 'comida', moment: m.key }); });
+    // 6) ducha/bañera casi diaria y hoy nada
+    if (st.n >= 7 && st.bano >= 0.6 && nowH >= 20 && !has('rutina', function (e) { return e.tipo === 'Ducha' || e.tipo === 'Bañera'; })) qs.push({ id: 'bano', pct: Math.round(st.bano * 100) });
+    // 7) ni una observación de estado en todo el día
+    if (nowH >= 16 && !has('obs')) qs.push({ id: 'estado' });
+    qs = qs.slice(0, 7);
+    // 8) cierre: valoración global (solo al final del día)
+    if (!dayValoracion(t) && pasado['Noche']) qs.push({ id: 'valoracion' });
+    return qs;
+  }
+  var repasoQs = [], repasoIdx = 0, repasoDone = 0;
+  function openRepaso() {
+    repasoQs = buildRepasoQuestions(); repasoIdx = 0; repasoDone = 0;
+    if (!repasoQs.length) { toast('✓ Nada que preguntar: el día está completo'); return; }
+    renderRepasoQ();
+    $('repasoBackdrop').hidden = false;
+  }
+  function closeRepaso() { $('repasoBackdrop').hidden = true; renderHoy(); }
+  function repasoNext() { repasoIdx++; renderRepasoQ(); }
+  function renderRepasoQ() {
+    var body = $('repasoBody'), skip = $('repasoSkip');
+    body.innerHTML = '';
+    if (repasoIdx >= repasoQs.length) {
+      $('repasoProgress').textContent = 'Terminado';
+      body.innerHTML = '<div class="rq-end"><div class="rq-big">✓</div><div class="rq-title" style="text-align:center">¡Día completo!</div><p class="rq-hint" style="text-align:center">' + (repasoDone ? 'Has completado ' + repasoDone + ' hueco' + (repasoDone > 1 ? 's' : '') + '.' : 'No añadiste nada nuevo, pero el repaso está hecho.') + '</p></div>';
+      skip.textContent = 'Cerrar';
+      return;
+    }
+    skip.textContent = 'Saltar';
+    $('repasoProgress').textContent = 'Pregunta ' + (repasoIdx + 1) + ' de ' + repasoQs.length;
+    var q = repasoQs[repasoIdx];
+    function title(t, hint) { body.insertAdjacentHTML('beforeend', '<div class="rq-title">' + t + '</div>' + (hint ? '<p class="rq-hint">' + hint + '</p>' : '')); }
+    function chipsInto(el, opts) { fill(el, opts.map(function (o) { return chip(o.l, !!o.sel, o.fn, o.cls); })); }
+    function chipsRow(opts) { var c = document.createElement('div'); c.className = 'chips rq-chips'; body.appendChild(c); chipsInto(c, opts); return c; }
+    function done(fn) { return function () { fn(); save(); repasoDone++; repasoNext(); }; }
+
+    if (q.id === 'sleep') {
+      title('🌙 Falta el sueño de anoche', '¿A qué hora se durmió y a qué hora se despertó?');
+      body.insertAdjacentHTML('beforeend',
+        '<div class="time-row"><label>Se durmió <input type="time" id="rqBed" /></label><label>Se despertó <input type="time" id="rqWake" /></label></div>' +
+        '<div class="field-label">¿Cómo fue la noche?</div><div class="chips" id="rqNoche"></div>' +
+        '<button class="btn-primary btn-block" id="rqSave" style="margin-top:14px">Guardar</button>');
+      var sq = { cal: null };
+      function paintNoche() { chipsInto($('rqNoche'), CALIDAD_TEXTO.map(function (o) { return { l: o.v, sel: sq.cal === o.v, fn: function () { sq.cal = (sq.cal === o.v ? null : o.v); paintNoche(); } }; })); }
+      paintNoche();
+      $('rqSave').addEventListener('click', function () {
+        var bed = $('rqBed').value, wake = $('rqWake').value;
+        if (!bed && !wake && !sq.cal) { repasoNext(); return; }   // nada elegido = saltar
+        var s = data.entries.find(function (e) { return e.type === 'sleep' && e.date === selectedDate; });
+        if (!s) s = addEntry('sleep', { moment: 'Noche', eventosNoche: [], despertarEstado: [], ayudas: [] });
+        if (bed) s.bed = bed; if (wake) s.wake = wake;
+        if (sq.cal) { s.calidadTexto = sq.cal; var cm = CALIDAD_TEXTO.find(function (o) { return o.v === sq.cal; }); if (cm && !s.calidad) s.calidad = cm.c; }
+        save(); repasoDone++; repasoNext();
+      });
+    }
+    else if (q.id === 'popo') {
+      title('💩 La deposición de hoy', 'La apuntas casi todos los días (' + q.pct + '%) y hoy no hay nada. ¿Hizo caca?');
+      chipsRow([
+        { l: '💩 Sí hizo', fn: function () {
+          body.insertAdjacentHTML('beforeend', '<div class="field-label">¿Sobre qué hora?</div><div class="time-row"><label><input type="time" id="rqPopoTime" value="' + nowTime() + '" /></label></div><button class="btn-primary btn-block" id="rqPopoSave" style="margin-top:12px">Guardar</button>');
+          $('rqPopoSave').addEventListener('click', done(function () { var tm = $('rqPopoTime').value; addEntry('salud', { subtipo: 'Deposición', time: tm, moment: momentFromTime(tm) || nowMoment() }); }));
+        } },
+        { l: 'No hizo hoy', cls: 'chip-warn', fn: done(function () { addEntry('salud', { subtipo: 'Deposición', detalle: 'No hizo', time: '', moment: 'Noche', nota: 'Confirmado en el repaso del día' }); }) }
+      ]);
+    }
+    else if (q.id === 'siesta') {
+      title('😴 La siesta', 'Suele dormir siesta la mayoría de los días (' + q.pct + '%) y hoy no hay nada.');
+      chipsRow([
+        { l: '😴 Sí durmió', fn: function () {
+          body.insertAdjacentHTML('beforeend', '<div class="time-row"><label>Inicio <input type="time" id="rqNapS" /></label><label>Fin <input type="time" id="rqNapE" /></label></div><button class="btn-primary btn-block" id="rqNapSave" style="margin-top:12px">Guardar</button>');
+          $('rqNapSave').addEventListener('click', done(function () { addEntry('nap', { start: $('rqNapS').value || '', end: $('rqNapE').value || '', moment: momentFromTime($('rqNapS').value) || 'Mediodía' }); }));
+        } },
+        { l: 'Casi, pero no llegó', fn: done(function () { addEntry('nap', { fallida: true, moment: 'Mediodía' }); }) },
+        { l: 'Hoy no', fn: function () { repasoNext(); } }
+      ]);
+    }
+    else if (q.id === 'momento') {
+      var art = MOMENT_ART[q.moment];
+      title(momentEm(q.moment) + ' ' + art.charAt(0).toUpperCase() + art.slice(1) + ' está ' + (art.indexOf('el ') === 0 ? 'vacío' : 'vacía'), '¿Qué hizo por ' + art + '?');
+      var opts = (q.acts || []).map(function (a) { return { l: a, fn: done(function () { addEntry('act', { tipo: a, moment: q.moment, compania: [], ambiente: [], senales: [], estrategias: [], transiciones: {} }); }) }; });
+      opts.push({ l: '🏠 En casa tranquilo', cls: 'chip-good', fn: done(function () { addEntry('obs', { senales: ['Tranquilo bien'], valencia: 'Bien', moment: q.moment, time: '' }); }) });
+      opts.push({ l: 'No me acuerdo', fn: function () { repasoNext(); } });
+      chipsRow(opts);
+    }
+    else if (q.id === 'comida') {
+      var nombre = MEAL_BY_MOMENT[q.moment];
+      title('🍽️ ' + nombre, 'No hay ninguna comida apuntada por ' + MOMENT_ART[q.moment] + '. ¿Hubo ' + nombre.toLowerCase() + '?');
+      var mo = q.moment;
+      chipsRow(MEAL_ACCEPT.map(function (o) { return { l: o.l, fn: done(function () { addEntry('meal', { nombre: nombre, moment: mo, aceptacion: o.v, alimentos: [] }); }) }; }).concat([{ l: 'No hubo', fn: function () { repasoNext(); } }]));
+    }
+    else if (q.id === 'bano') {
+      title('🛁 Ducha o bañera', 'Casi todos los días hay (' + q.pct + '%). ¿Hoy?');
+      chipsRow([
+        { l: '🚿 Ducha', fn: function () { rqBanoVal('Ducha'); } },
+        { l: '🛁 Bañera', fn: function () { rqBanoVal('Bañera'); } },
+        { l: 'Hoy no', fn: function () { repasoNext(); } }
+      ]);
+      function rqBanoVal(tipo) {
+        body.insertAdjacentHTML('beforeend', '<div class="field-label">¿Cómo fue?</div><div class="chips" id="rqBanoV"></div>');
+        chipsInto($('rqBanoV'), RUTINA_VAL.map(function (o) { return { l: o.em + ' ' + o.v, cls: o.v === 'Reactivo' ? 'chip-warn' : (o.v === 'Relaja' ? 'chip-good' : null), fn: done(function () { addEntry('rutina', { tipo: tipo, valoracion: o.v, moment: nowMoment() }); }) }; }));
+      }
+    }
+    else if (q.id === 'estado') {
+      title('📝 ¿Cómo ha estado hoy en general?', 'No hay ninguna observación de estado en todo el día.');
+      chipsRow(OBS_VALENCIA.map(function (o) { return { l: o.em + ' ' + o.v, cls: o.cls, fn: done(function () { addEntry('obs', { valencia: o.v, senales: [], moment: nowMoment(), time: '' }); }) }; }));
+    }
+    else if (q.id === 'valoracion') {
+      title('🌟 ¿Qué tal el día?', 'Para cerrar: tu valoración global.');
+      chipsRow(DAY_VAL.map(function (o) { return { l: o.em + ' ' + o.v, cls: o.s === 's-bad' ? 'chip-warn' : (o.s === 's-good' ? 'chip-good' : null), fn: done(function () { var e = getDayEntry(selectedDate); if (e) e.valoracion = o.v; else addEntry('day', { valoracion: o.v, moment: 'Noche' }); }) }; }));
+    }
+  }
+
   // ---------- perfil ----------
   function renderPerfilSheet() {
     var perfil = data.child.perfil || (data.child.perfil = {});
@@ -1055,7 +1212,7 @@
     var salud = data.entries.filter(function (e) { return e.type === 'salud'; });
     if (salud.length < 3) return '';
     var nDays = Object.keys(data.entries.reduce(function (m, e) { m[e.date] = 1; return m; }, {})).length;
-    var depos = salud.filter(function (e) { return e.subtipo === 'Deposición'; });
+    var depos = salud.filter(function (e) { return e.subtipo === 'Deposición' && e.detalle !== 'No hizo'; });   // el "no hizo" confirmado no cuenta como deposición
     var diasConDepo = Object.keys(depos.reduce(function (m, e) { m[e.date] = 1; return m; }, {})).length;
     var mins = depos.filter(function (e) { return e.time; }).map(function (e) { return toMin(e.time); });
     var horaMedia = mins.length ? fmtHora(Math.round(mins.reduce(function (a, b) { return a + b; }, 0) / mins.length)) : '—';
@@ -1534,7 +1691,7 @@
     var nap = data.entries.find(function (e) { return e.type === 'nap' && e.date === date && (e.start || e.end || e.fallida); });
     return {
       sleep: sleep, nap: nap,
-      depos: data.entries.filter(function (e) { return e.type === 'salud' && e.subtipo === 'Deposición' && e.date === date; }).length,
+      depos: data.entries.filter(function (e) { return e.type === 'salud' && e.subtipo === 'Deposición' && e.detalle !== 'No hizo' && e.date === date; }).length,
       dys: data.entries.filter(function (e) { return e.type === 'dys' && e.date === date; }).length,
       calN: sleep && sleep.eventosNoche ? sleep.eventosNoche.filter(function (x) { return x.tipo === 'Calambres'; }).length : 0,
       val: dayValoracion(date)
@@ -1888,7 +2045,7 @@
       molestia_oido: sig('Molesta ruido', 'Se tapa oídos', 'Pide tapones'),
       en_positivo: sig('TODO BIEN', 'Tranquilo bien', 'Alegre bien', 'Colabora', 'Con ganas'),
       comidas_sofa_suelo: ents.filter(function (e) { return e.type === 'meal' && (e.lugar === 'Sofá' || e.lugar === 'Suelo'); }).length,
-      deposiciones: ents.filter(function (e) { return e.type === 'salud' && e.subtipo === 'Deposición'; }).length,
+      deposiciones: ents.filter(function (e) { return e.type === 'salud' && e.subtipo === 'Deposición' && e.detalle !== 'No hizo'; }).length,
       transiciones_dificiles: trans,
       personas: pers,
       rutinas: rut,
@@ -2328,6 +2485,12 @@
     // cierre del día (Fase 6)
     $('dayNota').addEventListener('input', function () { setDayNota(this.value); });
     $('dayNota').addEventListener('blur', function () { cleanDayEntry(); });
+
+    // repaso del día (Fase 9)
+    $('repasoBtn').addEventListener('click', openRepaso);
+    $('repasoClose').addEventListener('click', closeRepaso);
+    $('repasoSkip').addEventListener('click', function () { if (repasoIdx >= repasoQs.length) closeRepaso(); else repasoNext(); });
+    $('repasoBackdrop').addEventListener('click', function (ev) { if (ev.target === this) closeRepaso(); });
 
     // anotar por voz
     $('voiceBtn').addEventListener('click', openVoice);

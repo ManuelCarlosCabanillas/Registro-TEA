@@ -35,6 +35,7 @@
       <button class="hot-btn" id="hotBtn">⚡ Registrar desajuste ahora</button>
       <p class="hint" id="hotHint">Un toque ahora. Completas el detalle cuando esté tranquilo.</p>
       <button class="voice-btn" id="voiceBtn">🎤 Anotar por voz</button>
+      <button class="repaso-btn" id="repasoBtn">📋 Repaso del día <span class="rb-sub">— te pregunto lo que falte</span></button>
 
       <section class="card" id="timelineCard" hidden>
         <div class="card-head">📖 <span>El día en orden</span><button class="tl-toggle" id="timelineToggle" aria-expanded="false">ver</button></div>
@@ -139,7 +140,7 @@
         <input type="text" id="dayNota" placeholder="Una frase para recordar el día (opcional)…" />
       </section>
 
-      <p class="ver">Registro TEA · v24 · local + IA</p>
+      <p class="ver">Registro TEA · v25 · local + IA</p>
     </main>
 
     <main id="view-resumen" class="view" hidden>
@@ -464,6 +465,21 @@
       <div class="sheet-foot">
         <button class="btn-ghost danger" id="rutinaDelete">Eliminar</button>
         <button class="btn-primary" id="rutinaSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: repaso del día (Fase 9) -->
+  <div class="sheet-backdrop z-voice" id="repasoBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Repaso del día">
+      <div class="sheet-head">
+        <div><h2>📋 Repaso del día</h2><div class="muted" id="repasoProgress"></div></div>
+        <button class="icon-btn" id="repasoClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body" id="repasoBody"></div>
+      <div class="sheet-foot">
+        <span class="muted" id="repasoCount"></span>
+        <button class="btn-ghost" id="repasoSkip">Saltar</button>
       </div>
     </div>
   </div>
