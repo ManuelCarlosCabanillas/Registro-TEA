@@ -2,7 +2,7 @@
   'use strict';
 
   var STORE_KEY = 'appTEA.v1';
-  var DATA_VERSION = 12;
+  var DATA_VERSION = 13;
 
   // ===== Config Supabase (claves públicas de cliente) =====
   var SUPABASE_URL = 'https://ntsgnvfmvlokujmddyjj.supabase.co';
@@ -39,7 +39,17 @@
   var LAT = ['<15 min', '15–30 min', '30–60 min', '>60 min'];
   var QUAL = [{ v: 1, e: '😖' }, { v: 2, e: '😕' }, { v: 3, e: '😐' }, { v: 4, e: '🙂' }, { v: 5, e: '😄' }];
   var WAKES = ['0', '1', '2', '3+'];
-  var AIDS = ['Melatonina', 'Colecho', 'Ruido blanco', 'Luz tenue', 'Cuento'];
+  var AIDS = ['Melatonina', 'Colecho', 'Ruido blanco', 'Luz tenue', 'Cuento', 'Chupete', 'Bibe', 'Masaje', 'Presión'];
+  // ----- Sueño 360º (Fase 1) -----
+  var DESPERTAR_COMO = ['Solo', 'Le despierto', 'Llorando'];
+  var DESPERTAR_ESTADO = ['Bien', 'Alegre', 'Cansado', 'Lloro', 'Reactivo'];
+  var ACUESTO_FACIL = ['Fácil', 'Difícil', 'Se reactiva'];
+  var DONDE_DORMIR = ['Cama', 'Sofá', 'Carro', 'Otro'];
+  var QUIEN_DORMIR = ['Solo', 'Acompañado'];
+  var CALIDAD_TEXTO = [{ v: 'Buena', c: 4 }, { v: '≈ Buena', c: 3 }, { v: 'Movida', c: 2 }, { v: 'Mala', c: 1 }];
+  var NOCHE_EVENTOS = ['Calambres', 'Palpitaciones', 'Se despierta y vuelve', 'Se sienta', 'Mucho movimiento', 'Respiración / nariz', 'Llanto', 'Sudor', 'Otro'];
+  var NAP_ACUESTO = ['Fácil', 'Difícil', 'Tumbado sin dormir'];
+  var NAP_DESPERTAR = ['Solo', 'Le despierto', 'No hay manera'];
   var MEAL_ACCEPT = [{ v: 'Comió bien', l: '✓ Comió bien' }, { v: 'Con dificultad', l: '~ Con dificultad' }, { v: 'Lo rechazó', l: '✕ Lo rechazó' }];
 
   var ACT_TYPES = ['Juego con mamá', 'Juego con papá', 'Juego con otro adulto', 'Juego con otros niños', 'Juego solo', 'Paseo', 'Deporte', 'Parque', 'Estudio / deberes', 'Colegio', 'Terapia', 'Pantalla', 'Música', 'Lectura / cuento', 'Manualidades', 'Comida en familia', 'Baño / aseo', 'Rutina de dormir', 'Visita / familia', 'Compras', 'Otra'];
@@ -95,7 +105,12 @@
     if (!d.child.perfil) d.child.perfil = {};
     if (!d.docs) d.docs = [];
     if (!d.entries) d.entries = [];
-    // (Aquí se encadenarán los pasos de migración de cada fase futura, por versión.)
+    // v13 (Fase 1 — Sueño 360º): asegurar arrays nuevos en las entradas de sueño.
+    if ((d.version || 0) < 13) {
+      d.entries.forEach(function (e) {
+        if (e.type === 'sleep') { if (!e.eventosNoche) e.eventosNoche = []; if (!e.despertarEstado) e.despertarEstado = []; }
+      });
+    }
     d.version = DATA_VERSION;
     return d;
   }
@@ -148,9 +163,23 @@
   function uid() { return 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
   function toMin(t) { if (!t) return null; var p = t.split(':'); return (+p[0]) * 60 + (+p[1]); }
   function durStr(s, e, overnight) {
-    var a = toMin(s), b = toMin(e); if (a == null || b == null) return '';
-    var d = b - a; if (d < 0) d += 1440; if (!overnight && d > 720) return '';
-    var h = Math.floor(d / 60), m = d % 60; return (h ? h + 'h ' : '') + (m ? m + 'm' : (h ? '' : '0m'));
+    var d = durMin(s, e, overnight); if (d == null) return '';
+    return fmtDur(d);
+  }
+  function durMin(s, e, overnight) {
+    var a = toMin(s), b = toMin(e); if (a == null || b == null) return null;
+    var d = b - a; if (d < 0) d += 1440; if (!overnight && d > 720) return null; return d;
+  }
+  function fmtDur(min) { if (min == null) return ''; var h = Math.floor(min / 60), m = min % 60; return (h ? h + 'h ' : '') + (m ? m + 'm' : (h ? '' : '0m')); }
+  // Total de sueño del día = noche (dormido→despertar) + siestas. Núcleo de la Fase 1.
+  function totalSleepMin(date) {
+    var t = 0, any = false;
+    var s = data.entries.find(function (e) { return e.type === 'sleep' && e.date === date; });
+    if (s) { var n = durMin(s.bed, s.wake, true); if (n != null) { t += n; any = true; } }
+    data.entries.filter(function (e) { return e.type === 'nap' && e.date === date; }).forEach(function (nap) {
+      var d = durMin(nap.start, nap.end, false); if (d != null) { t += d; any = true; }
+    });
+    return any ? t : null;
   }
 
   function addEntry(type, fields) {
@@ -203,20 +232,55 @@
     $('childAvatar').textContent = (data.child.name || '?').charAt(0).toUpperCase();
   }
 
-  // ---------- sleep (noche, inline) ----------
-  function upsertSleep() { return findToday('sleep') || addEntry('sleep', { moment: 'Noche', ayudas: [] }); }
+  // ---------- sleep 360º (noche, inline) ----------
+  function upsertSleep() { return findToday('sleep') || addEntry('sleep', { moment: 'Noche', ayudas: [], eventosNoche: [], despertarEstado: [] }); }
   function renderSleep() {
     var s = findToday('sleep');
-    $('sleepBed').value = (s && s.bed) || '';
+    var tot = totalSleepMin(selectedDate);
+    $('sleepTotal').textContent = tot != null ? 'Total ' + fmtDur(tot) : '';
+    // Despertar
     $('sleepWake').value = (s && s.wake) || '';
     $('sleepDur').textContent = s ? durStr(s.bed, s.wake, true) : '';
-    fill($('latChips'), LAT.map(function (v) { return chip(v, s && s.latencia === v, function () { setSleep('latencia', v); }); }));
+    fill($('wakeHowChips'), DESPERTAR_COMO.map(function (v) { return chip(v, s && s.despertarComo === v, function () { setSleep('despertarComo', v); }); }));
+    renderSleepMulti('wakeStateChips', DESPERTAR_ESTADO, 'despertarEstado');
+    // Noche
+    $('sleepSofa').value = (s && s.acuestoSofa) || '';
+    $('sleepBed').value = (s && s.bed) || '';
+    fill($('facilChips'), ACUESTO_FACIL.map(function (v) { return chip(v, s && s.facilidad === v, function () { setSleep('facilidad', v); }); }));
+    fill($('dondeChips'), DONDE_DORMIR.map(function (v) { return chip(v, s && s.donde === v, function () { setSleep('donde', v); }); }));
     fill($('qualChips'), QUAL.map(function (q) { return chip(q.e, s && s.calidad === q.v, function () { setSleep('calidad', q.v); }, 'face'); }));
-    fill($('wakeChips'), WAKES.map(function (v) { return chip(v, s && s.despertares === v, function () { setSleep('despertares', v); }); }));
+    fill($('qualTextChips'), CALIDAD_TEXTO.map(function (o) { return chip(o.v, s && s.calidadTexto === o.v, function () { setSleepCalidadTexto(o); }); }));
+    renderNocheEvents(s);
+    fill($('quienChips'), QUIEN_DORMIR.map(function (v) { return chip(v, s && s.quien === v, function () { setSleep('quien', v); }); }));
     fill($('aidChips'), AIDS.map(function (v) {
       var sel = s && s.ayudas && s.ayudas.indexOf(v) !== -1;
       return chip(v, sel, function () { var e = upsertSleep(); if (!e.ayudas) e.ayudas = []; toggleArr(e.ayudas, v); save(); renderSleep(); });
     }));
+    $('sleepNota').value = (s && s.nota) || '';
+  }
+  function renderSleepMulti(containerId, opts, key) {
+    var s = findToday('sleep');
+    fill($(containerId), opts.map(function (v) {
+      var sel = s && s[key] && s[key].indexOf(v) !== -1;
+      return chip(v, sel, function () { var e = upsertSleep(); if (!e[key]) e[key] = []; toggleArr(e[key], v); save(); renderSleep(); });
+    }));
+  }
+  function setSleep(field, val) { var e = upsertSleep(); e[field] = (e[field] === val ? null : val); save(); renderSleep(); }
+  function setSleepCalidadTexto(o) { var e = upsertSleep(); if (e.calidadTexto === o.v) { e.calidadTexto = null; } else { e.calidadTexto = o.v; e.calidad = o.c; } save(); renderSleep(); }
+  function addNocheEvent(tipo) { var e = upsertSleep(); if (!e.eventosNoche) e.eventosNoche = []; e.eventosNoche.push({ tipo: tipo, hora: '' }); save(); renderSleep(); }
+  function renderNocheEvents(s) {
+    fill($('nocheEventChips'), NOCHE_EVENTOS.map(function (v) { return chip('＋ ' + v, false, function () { addNocheEvent(v); }, 'chip-add'); }));
+    var el = $('nocheEventList'); el.innerHTML = '';
+    var evs = (s && s.eventosNoche) || [];
+    evs.forEach(function (ev, i) {
+      var row = document.createElement('div'); row.className = 'noche-ev';
+      var lbl = document.createElement('span'); lbl.className = 'ne-t'; lbl.textContent = ev.tipo; row.appendChild(lbl);
+      var tm = document.createElement('input'); tm.type = 'time'; tm.value = ev.hora || ''; tm.className = 'ne-time'; tm.setAttribute('aria-label', 'Hora');
+      tm.addEventListener('change', function () { var e = upsertSleep(); if (e.eventosNoche[i]) { e.eventosNoche[i].hora = this.value; save(); } });
+      var x = document.createElement('button'); x.className = 'ne-x'; x.textContent = '✕'; x.setAttribute('aria-label', 'Quitar');
+      x.addEventListener('click', function () { var e = upsertSleep(); e.eventosNoche.splice(i, 1); save(); renderSleep(); });
+      row.appendChild(tm); row.appendChild(x); el.appendChild(row);
+    });
   }
   function setSleep(field, val) { var e = upsertSleep(); e[field] = (e[field] === val ? null : val); save(); renderSleep(); }
 
@@ -240,7 +304,14 @@
   }
 
   // ---------- summaries ----------
-  function napSummary(e) { var p = []; var d = durStr(e.start, e.end, false); if (d) p.push(d); if (e.calidad) p.push('calidad ' + e.calidad + '/5'); if (e.nota) p.push(e.nota); return { title: 'Siesta', sub: p.join(' · ') }; }
+  function napSummary(e) {
+    var p = []; var d = durStr(e.start, e.end, false); if (d) p.push(d);
+    if (e.calidad) p.push('calidad ' + e.calidad + '/5');
+    if (e.acuesto) p.push('se acostó ' + e.acuesto.toLowerCase());
+    if (e.despertar) p.push('despertó ' + e.despertar.toLowerCase());
+    if (e.nota) p.push(e.nota);
+    return { title: e.fallida ? 'Siesta fallida' : 'Siesta', sub: p.join(' · ') };
+  }
   function mealSummary(e) {
     var foods = (e.alimentos || []).map(function (f) { return (f.nuevo ? '★' : '') + f.nombre; });
     var sub = foods.length ? foods.join(', ') : 'sin alimentos'; if (e.aceptacion) sub += ' · ' + e.aceptacion.toLowerCase();
@@ -293,10 +364,15 @@
     openNap = id; var n = byId(id);
     $('napStart').value = n.start || ''; $('napEnd').value = n.end || '';
     $('napDur').textContent = durStr(n.start, n.end, false);
+    $('napFallida').checked = !!n.fallida;
+    singleGroup('napAcuesto', NAP_ACUESTO, n, 'acuesto');
+    singleGroup('napDespertar', NAP_DESPERTAR, n, 'despertar');
     singleGroup('napQual', QUAL, n, 'calidad', null, true);
+    $('napNota').value = n.nota || '';
     $('napBackdrop').hidden = false;
   }
-  function closeNap() { var n = byId(openNap); if (n && !n.start && !n.end && !n.calidad) removeEntry(openNap); $('napBackdrop').hidden = true; openNap = null; renderHoy(); }
+  function napIsEmpty(n) { return n && !n.start && !n.end && !n.calidad && !n.fallida && !n.acuesto && !n.despertar && !n.nota; }
+  function closeNap() { var n = byId(openNap); if (napIsEmpty(n)) removeEntry(openNap); $('napBackdrop').hidden = true; openNap = null; renderHoy(); }
 
   // ---------- meal sheet ----------
   function openMealSheet(id) {
@@ -429,7 +505,7 @@
     else if (e.type === 'meal') { var m = mealSummary(e); title = '🍽️ ' + m.title; sub = m.sub; }
     else if (e.type === 'act') { var a = actSummary(e); title = '🚶 ' + a.title; sub = a.sub; }
     else if (e.type === 'dys') { var d = dysSummary(e); title = '⚡ ' + d.title; sub = d.sub; }
-    else if (e.type === 'sleep') { var p = []; var dr = durStr(e.bed, e.wake, true); if (dr) p.push(dr); if (e.calidad) p.push('calidad ' + e.calidad + '/5'); title = '🌙 Sueño de anoche'; sub = p.join(' · ') || 'sin datos'; }
+    else if (e.type === 'sleep') { var p = []; var dr = durStr(e.bed, e.wake, true); if (dr) p.push(dr); if (e.calidad) p.push('calidad ' + e.calidad + '/5'); var ne = (e.eventosNoche || []).length; if (ne) p.push(ne + ' evento' + (ne > 1 ? 's' : '') + ' noche'); title = '🌙 Sueño de anoche'; sub = p.join(' · ') || 'sin datos'; }
     var when = e.time ? e.time + ' ' : '';
     var warn = (e.type === 'dys') || (e.type === 'act' && data.entries.some(function (x) { return x.type === 'dys' && x.linkedEventId === e.id; }));
     return '<div class="res-line"><span class="k">' + when + '</span><span class="' + (warn ? 'res-warn' : '') + '">' + title + (sub ? ' · <span style="color:var(--muted)">' + sub + '</span>' : '') + '</span></div>';
@@ -448,7 +524,8 @@
     var t = selectedDate, ents = data.entries.filter(function (e) { return e.date === t; }), d = new Date(t + 'T12:00:00');
     var html = '<div class="res-date">' + (t === todayKey() ? 'Hoy · ' : '') + d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }) + '</div>';
     var sleep = ents.find(function (e) { return e.type === 'sleep'; });
-    var sleepVal = sleep ? ((durStr(sleep.bed, sleep.wake, true) || '—') + (sleep.calidad ? ' · ' + sleep.calidad + '/5' : '')) : '—';
+    var tot = totalSleepMin(t);
+    var sleepVal = (tot != null ? fmtDur(tot) : '—') + (sleep && sleep.calidad ? ' · ' + sleep.calidad + '/5' : '');
     var nMeals = ents.filter(function (e) { return e.type === 'meal'; }).length, nAct = ents.filter(function (e) { return e.type === 'act'; }).length, nDys = ents.filter(function (e) { return e.type === 'dys'; }).length;
     html += '<div class="res-top">' +
       '<div class="res-stat"><div class="lbl">🌙 Sueño</div><div class="val">' + sleepVal + '</div></div>' +
@@ -598,6 +675,32 @@
     return items.map(function (i) { return '<div class="bar-row"><span class="lbl">' + i.k + '</span><span class="bar-track"><span class="bar-fill ' + (warn ? 'warn' : '') + '" style="width:' + Math.round(i.v / max * 100) + '%"></span></span><span class="val">' + i.v + '</span></div>'; }).join('');
   }
   function sleepQualityByDate() { var m = {}; data.entries.forEach(function (e) { if (e.type === 'sleep' && e.calidad) m[e.date] = e.calidad; }); return m; }
+  function calambresByDate() {
+    var m = {};
+    data.entries.forEach(function (e) {
+      if (e.type === 'sleep' && e.eventosNoche) {
+        var n = e.eventosNoche.filter(function (ev) { return ev.tipo === 'Calambres'; }).length;
+        if (n) m[e.date] = (m[e.date] || 0) + n;
+      }
+    });
+    return m;
+  }
+  function sleepAnalysisHtml() {
+    var dates = lastNDates(14);
+    var totals = dates.map(function (d) { var t = totalSleepMin(d); return t != null ? Math.round(t / 6) / 10 : 0; }); // horas, 1 decimal
+    var vals = dates.map(totalSleepMin).filter(function (t) { return t != null; });
+    var avg = vals.length ? Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length) : 0;
+    var cal = calambresByDate(), nightsCal = Object.keys(cal).length;
+    var nNights = data.entries.filter(function (e) { return e.type === 'sleep'; }).length;
+    var html = '<div class="an-h">🌙 Sueño</div>';
+    html += '<div class="kpis">' +
+      '<div class="kpi"><div class="n">' + (avg ? fmtDur(avg) : '—') + '</div><div class="l">sueño total medio</div></div>' +
+      '<div class="kpi"><div class="n' + (nightsCal ? ' warn' : '') + '">' + nightsCal + '</div><div class="l">noches con calambres</div></div>' +
+      '<div class="kpi"><div class="n">' + nNights + '</div><div class="l">noches registradas</div></div>' +
+      '</div>';
+    if (vals.length) html += '<div class="an-h">Total de sueño — 14 días (horas)</div><div class="card-an">' + sparkVals(totals) + '</div>';
+    return html;
+  }
   function dysByDate() { var m = {}; data.entries.forEach(function (e) { if (e.type === 'dys') m[e.date] = (m[e.date] || 0) + 1; }); return m; }
   function sleepEffect() {
     var sq = sleepQualityByDate(), dd = dysByDate(), bad = [], good = [];
@@ -837,6 +940,9 @@
     // tendencia
     html += '<div class="an-h">Tendencia (14 días)</div><div class="card-an">' + sparkline() + '</div>';
 
+    // sueño (Fase 1)
+    html += sleepAnalysisHtml();
+
     // por momento
     var byMoment = MOMENTS.map(function (m) { return { k: m.key, v: dys.filter(function (e) { return momentOf(e) === m.key; }).length }; });
     html += '<div class="an-h">Desajustes por momento del día</div><div class="card-an">' + barList(byMoment, true) + '</div>';
@@ -1050,7 +1156,8 @@
 
   // ---- Resumen compacto de datos para análisis / chat ----
   function compactEntry(e) {
-    if (e.type === 'sleep') return { tipo: 'sueño', calidad: e.calidad || null, acostado: e.bed || null, despertado: e.wake || null };
+    if (e.type === 'sleep') { var tt = totalSleepMin(e.date); return { tipo: 'sueño', calidad: e.calidad || null, durmio: e.bed || null, desperto: e.wake || null, total_sueno_min: tt, se_durmio: e.facilidad || null, donde: e.donde || null, desperto_como: e.despertarComo || null, eventos_noche: (e.eventosNoche || []).map(function (x) { return x.tipo + (x.hora ? ' ' + x.hora : ''); }) }; }
+    if (e.type === 'nap') return { tipo: 'siesta', momento: momentOf(e), inicio: e.start || null, fin: e.end || null, calidad: e.calidad || null, fallida: !!e.fallida };
     if (e.type === 'meal') return { tipo: 'comida', nombre: e.nombre || 'comida', momento: momentOf(e), aceptacion: e.aceptacion || null, alimentos: (e.alimentos || []).map(function (f) { return f.nombre; }) };
     if (e.type === 'act') return { tipo: 'actividad', actividad: e.tipo || null, momento: momentOf(e), lugar: e.lugar || null, termino: e.termino || null, con_desajuste: actHasDys(e) };
     if (e.type === 'dys') { var a = e.linkedEventId ? byId(e.linkedEventId) : null; return { tipo: 'desajuste', desregulacion: e.tipos || [], momento: momentOf(e), intensidad: e.intensidad || null, antes: e.antecedentes || [], senales: e.senales || [], ayudo: e.ayudo || [], durante_actividad: a ? (a.tipo || null) : null }; }
@@ -1253,8 +1360,16 @@
     if (ev.type === 'meal') return '🍽️ ' + (ev.nombre || 'Comida') + (ev.aceptacion ? ' · ' + ev.aceptacion.toLowerCase() : '') + ((ev.alimentos && ev.alimentos.length) ? ' (' + ev.alimentos.join(', ') + ')' : '');
     if (ev.type === 'act') return '🚶 ' + (ev.tipo || 'Actividad') + (ev.lugar ? ' · ' + ev.lugar.toLowerCase() : '') + (ev.termino ? ' · terminó ' + ev.termino.toLowerCase() : '');
     if (ev.type === 'dys') return '⚡ ' + ((ev.tipos && ev.tipos.length) ? ev.tipos.join(', ') : 'Desajuste') + ((ev.antecedentes && ev.antecedentes.length) ? ' · tras ' + ev.antecedentes.join(', ').toLowerCase() : '');
-    if (ev.type === 'nap') return '😴 Siesta' + (ev.start ? ' · ' + ev.start + '→' + (ev.end || '?') : '') + (ev.calidad ? ' · calidad ' + ev.calidad + '/5' : '') + (ev.nota ? ' · ' + ev.nota : '');
-    if (ev.type === 'sleep') return '🌙 Sueño' + (ev.calidad ? ' · calidad ' + ev.calidad + '/5' : '') + (ev.bed ? ' · ' + ev.bed + '→' + (ev.wake || '?') : '');
+    if (ev.type === 'nap') return '😴 ' + (ev.fallida ? 'Siesta fallida' : 'Siesta') + (ev.start ? ' · ' + ev.start + '→' + (ev.end || '?') : '') + (ev.calidad ? ' · calidad ' + ev.calidad + '/5' : '') + (ev.nota ? ' · ' + ev.nota : '');
+    if (ev.type === 'sleep') {
+      var sp = [];
+      if (ev.bed || ev.wake) sp.push((ev.bed || '?') + '→' + (ev.wake || '?'));
+      if (ev.calidad) sp.push('calidad ' + ev.calidad + '/5');
+      if (ev.facilidad) sp.push('se durmió ' + String(ev.facilidad).toLowerCase());
+      var ne = Array.isArray(ev.eventosNoche) ? ev.eventosNoche.length : 0;
+      if (ne) sp.push(ne + ' evento' + (ne > 1 ? 's' : '') + ' noche');
+      return '🌙 Sueño' + (sp.length ? ' · ' + sp.join(' · ') : '');
+    }
     return ev.type;
   }
   function renderVoicePreview() {
@@ -1282,7 +1397,11 @@
         vocab: {
           mealAcept: MEAL_ACCEPT.map(function (m) { return m.v; }),
           actTypes: ACT_TYPES, actTermino: ACT_TERMINO,
-          dysTipos: DYS.tipos, dysAnt: DYS.antecedentes, dysSenales: DYS.senales, dysAyudo: DYS.ayudo
+          dysTipos: DYS.tipos, dysAnt: DYS.antecedentes, dysSenales: DYS.senales, dysAyudo: DYS.ayudo,
+          napAcuesto: NAP_ACUESTO, napDespertar: NAP_DESPERTAR,
+          calidadTexto: CALIDAD_TEXTO.map(function (o) { return o.v; }), acuestoFacil: ACUESTO_FACIL,
+          dondeDormir: DONDE_DORMIR, despertarComo: DESPERTAR_COMO, despertarEstado: DESPERTAR_ESTADO,
+          nocheEventos: NOCHE_EVENTOS
         }
       });
       voiceEvents = (res.eventos || []).filter(function (e) { return e && ['meal', 'act', 'dys', 'nap', 'sleep'].indexOf(e.type) !== -1; });
@@ -1329,8 +1448,27 @@
     if (ev.type === 'meal') { base.nombre = ev.nombre || 'Comida'; base.alimentos = (ev.alimentos || []).map(function (nm) { return { nombre: String(nm) }; }); if (ev.aceptacion) base.aceptacion = snapOne(ev.aceptacion, MEAL_ACCEPT.map(function (m) { return m.v; })); }
     else if (ev.type === 'act') { base.tipo = ev.tipo ? snapOne(ev.tipo, ACT_TYPES) : 'Otra'; if (ev.lugar) base.lugar = snapOne(ev.lugar, ACT_LUGAR); if (ev.termino) base.termino = snapOne(ev.termino, ACT_TERMINO); base.compania = []; base.ambiente = []; base.senales = []; base.estrategias = []; }
     else if (ev.type === 'dys') { base.tipos = snapArr(ev.tipos, DYS.tipos); base.antecedentes = snapArr(ev.antecedentes, DYS.antecedentes); base.senales = snapArr(ev.senales, DYS.senales); base.sensorial = snapArr(ev.sensorial, DYS.sensorial); base.ayudo = snapArr(ev.ayudo, DYS.ayudo); if (ev.intensidad) base.intensidad = +ev.intensidad; base.completo = true; }
-    else if (ev.type === 'nap') { if (ev.start) base.start = ev.start; if (ev.end) base.end = ev.end; if (ev.calidad) base.calidad = +ev.calidad; base.moment = ev.moment || momentFromTime(ev.start) || 'Tarde'; }
-    else if (ev.type === 'sleep') { if (ev.bed) base.bed = ev.bed; if (ev.wake) base.wake = ev.wake; if (ev.calidad) base.calidad = +ev.calidad; base.moment = 'Noche'; base.ayudas = []; }
+    else if (ev.type === 'nap') {
+      if (ev.start) base.start = ev.start; if (ev.end) base.end = ev.end; if (ev.calidad) base.calidad = +ev.calidad;
+      if (ev.acuesto) base.acuesto = snapOne(ev.acuesto, NAP_ACUESTO);
+      if (ev.despertar) base.despertar = snapOne(ev.despertar, NAP_DESPERTAR);
+      if (ev.fallida) base.fallida = true;
+      base.moment = ev.moment || momentFromTime(ev.start) || 'Tarde';
+    }
+    else if (ev.type === 'sleep') {
+      if (ev.bed) base.bed = ev.bed; if (ev.acuestoSofa) base.acuestoSofa = ev.acuestoSofa; if (ev.wake) base.wake = ev.wake;
+      if (ev.calidad) base.calidad = +ev.calidad;
+      if (ev.calidadTexto) { base.calidadTexto = snapOne(ev.calidadTexto, CALIDAD_TEXTO.map(function (o) { return o.v; })); if (!base.calidad) { var cm = CALIDAD_TEXTO.find(function (o) { return o.v === base.calidadTexto; }); if (cm) base.calidad = cm.c; } }
+      if (ev.facilidad) base.facilidad = snapOne(ev.facilidad, ACUESTO_FACIL);
+      if (ev.donde) base.donde = snapOne(ev.donde, DONDE_DORMIR);
+      if (ev.despertarComo) base.despertarComo = snapOne(ev.despertarComo, DESPERTAR_COMO);
+      base.despertarEstado = snapArr(ev.despertarEstado, DESPERTAR_ESTADO);
+      base.eventosNoche = (Array.isArray(ev.eventosNoche) ? ev.eventosNoche : []).map(function (x) {
+        var tipo = (typeof x === 'string') ? x : (x && x.tipo);
+        return { tipo: snapOne(String(tipo || 'Otro'), NOCHE_EVENTOS), hora: (x && x.hora) || '' };
+      }).filter(function (x) { return x.tipo; });
+      base.moment = 'Noche'; base.ayudas = [];
+    }
     return base;
   }
 
@@ -1360,8 +1498,10 @@
       btn.addEventListener('click', function () { var el = $(btn.dataset.target); var open = !el.hidden; el.hidden = open; btn.textContent = (open ? '＋ más detalle' : '－ menos detalle'); });
     });
 
+    $('sleepSofa').addEventListener('change', function () { var e = upsertSleep(); e.acuestoSofa = this.value; save(); renderSleep(); });
     $('sleepBed').addEventListener('change', function () { var e = upsertSleep(); e.bed = this.value; save(); renderSleep(); });
     $('sleepWake').addEventListener('change', function () { var e = upsertSleep(); e.wake = this.value; save(); renderSleep(); });
+    $('sleepNota').addEventListener('input', function () { var e = upsertSleep(); e.nota = this.value; save(); });
 
     $('childChip').addEventListener('click', function () { var n = prompt('Nombre del peque:', data.child.name); if (n && n.trim()) { data.child.name = n.trim(); save(); renderHeader(); } });
 
@@ -1374,6 +1514,8 @@
     // nap sheet
     $('napStart').addEventListener('change', function () { var n = byId(openNap); if (n) { n.start = this.value; save(); $('napDur').textContent = durStr(n.start, n.end, false); } });
     $('napEnd').addEventListener('change', function () { var n = byId(openNap); if (n) { n.end = this.value; save(); $('napDur').textContent = durStr(n.start, n.end, false); } });
+    $('napFallida').addEventListener('change', function () { var n = byId(openNap); if (n) { n.fallida = this.checked; save(); } });
+    $('napNota').addEventListener('input', function () { var n = byId(openNap); if (n) { n.nota = this.value; save(); } });
     $('napClose').addEventListener('click', closeNap);
     $('napSave').addEventListener('click', function () { toast('Guardado'); closeNap(); });
     $('napDelete').addEventListener('click', function () { removeEntry(openNap); $('napBackdrop').hidden = true; openNap = null; renderHoy(); });

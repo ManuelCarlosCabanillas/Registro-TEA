@@ -37,25 +37,44 @@
       <button class="voice-btn" id="voiceBtn">🎤 Anotar por voz</button>
 
       <section class="card">
-        <div class="card-head">🌙 <span>Sueño</span></div>
-        <div class="sub">Noche</div>
+        <div class="card-head">🌙 <span>Sueño</span><span class="sleep-total" id="sleepTotal"></span></div>
+
+        <div class="sub">🌅 Despertar</div>
         <div class="time-row">
-          <label>Se acostó <input type="time" id="sleepBed" /></label>
           <label>Se despertó <input type="time" id="sleepWake" /></label>
           <span class="dur" id="sleepDur"></span>
         </div>
-        <div class="field-label">¿Cuánto tardó en dormirse?</div>
-        <div class="chips" id="latChips"></div>
-        <div class="field-label">Calidad percibida</div>
+        <div class="field-label">¿Cómo despertó?</div>
+        <div class="chips" id="wakeHowChips"></div>
+        <div class="field-label">Estado al despertar <span class="muted">(varios)</span></div>
+        <div class="chips" id="wakeStateChips"></div>
+
+        <div class="sub" style="margin-top:14px">🌙 La noche</div>
+        <div class="time-row">
+          <label>Se tumbó <input type="time" id="sleepSofa" /></label>
+          <label>Se durmió <input type="time" id="sleepBed" /></label>
+        </div>
+        <div class="field-label">¿Cómo se durmió?</div>
+        <div class="chips" id="facilChips"></div>
+        <div class="field-label">¿Dónde durmió?</div>
+        <div class="chips" id="dondeChips"></div>
+        <div class="field-label">Calidad de la noche</div>
         <div class="chips faces" id="qualChips"></div>
+        <div class="chips" id="qualTextChips"></div>
+        <div class="field-label">Eventos de la noche <span class="muted">(toca para añadir)</span></div>
+        <div class="chips" id="nocheEventChips"></div>
+        <div id="nocheEventList"></div>
         <button class="more-toggle" data-target="sleepMore">＋ más detalle</button>
         <div class="more" id="sleepMore" hidden>
-          <div class="field-label">Despertares nocturnos</div>
-          <div class="chips" id="wakeChips"></div>
-          <div class="field-label">Ayudas / contexto</div>
+          <div class="field-label">¿Con quién durmió?</div>
+          <div class="chips" id="quienChips"></div>
+          <div class="field-label">Ayudas / contexto <span class="muted">(varios)</span></div>
           <div class="chips" id="aidChips"></div>
+          <div class="field-label">Nota</div>
+          <textarea id="sleepNota" rows="2" placeholder="Opcional…"></textarea>
         </div>
-        <div class="sub" style="margin-top:14px">Siestas</div>
+
+        <div class="sub" style="margin-top:14px">😴 Siestas</div>
         <div id="napList"></div>
         <button class="btn-add-block" id="addNap">＋ Añadir siesta</button>
       </section>
@@ -78,7 +97,7 @@
         <button class="btn-add-block" id="addDys">＋ Añadir desajuste</button>
       </section>
 
-      <p class="ver">Registro TEA · v16 · local + IA</p>
+      <p class="ver">Registro TEA · v17 · local + IA</p>
     </main>
 
     <main id="view-resumen" class="view" hidden>
@@ -271,8 +290,15 @@
           <label>Fin <input type="time" id="napEnd" /></label>
           <span class="dur" id="napDur"></span>
         </div>
+        <label class="check"><input type="checkbox" id="napFallida" /> Casi se duerme pero no llega (siesta fallida)</label>
+        <div class="field-label">¿Cómo se acostó?</div>
+        <div class="chips" id="napAcuesto"></div>
+        <div class="field-label">¿Cómo despertó?</div>
+        <div class="chips" id="napDespertar"></div>
         <div class="field-label">Calidad</div>
         <div class="chips faces" id="napQual"></div>
+        <div class="field-label">Nota</div>
+        <textarea id="napNota" rows="2" placeholder="Opcional…"></textarea>
       </div>
       <div class="sheet-foot">
         <button class="btn-ghost danger" id="napDelete">Eliminar</button>

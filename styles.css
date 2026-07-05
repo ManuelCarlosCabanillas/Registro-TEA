@@ -456,3 +456,14 @@ body {
 .chat-input input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
 .chat-send { border: none; background: var(--accent); color: #fff; width: 42px; border-radius: 50%; font-size: 16px; cursor: pointer; flex-shrink: 0; }
 .chat-send:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ===== Sueño 360º (Fase 1) ===== */
+.sleep-total { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--accent-dark); background: var(--accent-tint); border-radius: 999px; padding: 3px 10px; }
+.chip.chip-add { border-style: dashed; color: var(--muted); background: var(--surface-2); }
+.chip.chip-add:active { background: var(--accent-tint); }
+#nocheEventList { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.noche-ev { display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; }
+.noche-ev .ne-t { flex: 1; font-size: 13px; color: var(--ink); }
+.noche-ev .ne-time { border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font-size: 13px; font-family: inherit; color: var(--ink); background: var(--surface); }
+.noche-ev .ne-time:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
+.noche-ev .ne-x { border: none; background: none; color: var(--muted); font-size: 15px; cursor: pointer; padding: 2px 4px; flex-shrink: 0; }
