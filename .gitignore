@@ -6,3 +6,6 @@ desktop.ini
 # Herramientas locales (no hacen falta en el hosting)
 serve.ps1
 .claude/
+
+# Fixtures de prueba con datos reales (NO desplegar)
+fixture-*.json

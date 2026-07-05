@@ -192,9 +192,10 @@ body {
 
 .res-moment-head { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; margin: 16px 0 8px; color: var(--sc); }
 .res-moment-head .em { font-size: 18px; }
-.m-manana { --sc: #B8860B; }
-.m-tarde  { --sc: #C0492F; }
-.m-noche  { --sc: #185FA5; }
+.m-manana   { --sc: #B8860B; }
+.m-mediodia { --sc: #C77417; }
+.m-tarde    { --sc: #C0492F; }
+.m-noche    { --sc: #185FA5; }
 
 .demo-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .an-h { font-size: 15px; font-weight: 600; margin: 20px 0 8px; }

@@ -2,6 +2,7 @@
   'use strict';
 
   var STORE_KEY = 'appTEA.v1';
+  var DATA_VERSION = 12;
 
   // ===== Config Supabase (claves públicas de cliente) =====
   var SUPABASE_URL = 'https://ntsgnvfmvlokujmddyjj.supabase.co';
@@ -9,13 +10,25 @@
 
   var MOMENTS = [
     { key: 'Mañana', em: '🌅', cls: 'm-manana' },
+    { key: 'Mediodía', em: '☀️', cls: 'm-mediodia' },
     { key: 'Tarde', em: '🌇', cls: 'm-tarde' },
     { key: 'Noche', em: '🌙', cls: 'm-noche' }
   ];
-  function momentFromTime(t) { if (!t) return null; var h = +t.split(':')[0]; return h < 13 ? 'Mañana' : h < 20 ? 'Tarde' : 'Noche'; }
-  function nowMoment() { var h = new Date().getHours(); return h < 13 ? 'Mañana' : h < 20 ? 'Tarde' : 'Noche'; }
+  function momentFromTime(t) { if (!t) return null; var h = +t.split(':')[0]; return h < 13 ? 'Mañana' : h < 16 ? 'Mediodía' : h < 20 ? 'Tarde' : 'Noche'; }
+  function nowMoment() { var h = new Date().getHours(); return h < 13 ? 'Mañana' : h < 16 ? 'Mediodía' : h < 20 ? 'Tarde' : 'Noche'; }
   function momentEm(m) { var f = MOMENTS.find(function (x) { return x.key === m; }); return f ? f.em : '•'; }
   function momentOf(e) { return e.moment || momentFromTime(e.time) || 'Tarde'; }
+  // Etiqueta fina de la tarde: '1ª tarde' (antes de la siesta) / '2ª tarde' (después).
+  // Derivada automáticamente de la siesta del día; para otros momentos devuelve el momento.
+  // (Helper para las Fases 1-2; no se pide nunca al usuario.)
+  function tardeLabel(e) {
+    if (momentOf(e) !== 'Tarde') return momentOf(e);
+    var nap = data.entries.find(function (x) { return x.type === 'nap' && x.date === e.date && (x.start || x.end); });
+    if (!nap) return 'Tarde';
+    var ref = toMin(nap.end || nap.start), evMin = e.time ? toMin(e.time) : null;
+    if (evMin == null || ref == null) return 'Tarde';
+    return evMin < toMin(nap.start || nap.end) ? '1ª tarde' : '2ª tarde';
+  }
 
   var ZONES = [
     { val: 'Calma', em: '🙂', cls: 'z-green', color: '#639922' },
@@ -75,8 +88,31 @@
   // Hoy el driver es local (offline). En Fase 1 se inyecta un supabaseDriver
   // que implementa la misma interfaz (loadAll/saveAll/putEntry/removeEntry/subscribe)
   // para sincronización en la nube, sin tocar la UI.
-  function defaultData() { return { version: 11, child: { name: 'Leo', perfil: {} }, entries: [], bank: SEED_FOODS.slice(), docs: [] }; }
-  function migrate(d) { if (!d.bank) d.bank = SEED_FOODS.slice(); if (!d.child.perfil) d.child.perfil = {}; if (!d.docs) d.docs = []; return d; }
+  function defaultData() { return { version: DATA_VERSION, child: { name: 'Leo', perfil: {} }, entries: [], bank: SEED_FOODS.slice(), docs: [] }; }
+  function migrate(d) {
+    if (!d.child) d.child = { name: 'Leo', perfil: {} };
+    if (!d.bank) d.bank = SEED_FOODS.slice();
+    if (!d.child.perfil) d.child.perfil = {};
+    if (!d.docs) d.docs = [];
+    if (!d.entries) d.entries = [];
+    // (Aquí se encadenarán los pasos de migración de cada fase futura, por versión.)
+    d.version = DATA_VERSION;
+    return d;
+  }
+  // Copia de seguridad automática una sola vez por versión, ANTES de migrar.
+  // Excluye 'docs' (los ficheros pesados) para no agotar el cupo de localStorage;
+  // lo valioso —entradas y perfil— sí se guarda. Red de seguridad para futuras fases.
+  function maybeBackup(d) {
+    try {
+      var v = (d && d.version) || 0;
+      if (v >= DATA_VERSION) return;
+      var key = 'appTEA.backup.v' + v;
+      if (localStorage.getItem(key)) return;
+      var copy = {}; for (var k in d) { if (k !== 'docs') copy[k] = d[k]; }
+      copy._backupOf = v; copy._backupAt = Date.now();
+      localStorage.setItem(key, JSON.stringify(copy));
+    } catch (e) {}
+  }
   var localDriver = {
     loadAll: function () { try { var d = JSON.parse(localStorage.getItem(STORE_KEY)); if (d && d.entries) return d; } catch (e) {} return null; },
     saveAll: function (st) { try { localStorage.setItem(STORE_KEY, JSON.stringify(st)); } catch (e) {} },
@@ -84,7 +120,14 @@
   };
   var Store = {
     driver: localDriver, state: null, remoteCb: null,
-    init: function () { this.state = migrate(this.driver.loadAll() || defaultData()); return this.state; },
+    init: function () {
+      var loaded = this.driver.loadAll();
+      var needsMigration = loaded && ((loaded.version || 0) < DATA_VERSION);
+      if (loaded) maybeBackup(loaded);
+      this.state = migrate(loaded || defaultData());
+      if (needsMigration) { try { this.driver.saveAll(this.state); } catch (e) {} }   // hacer duradera la migración (sin tocar la nube)
+      return this.state;
+    },
     setDriver: function (d) { this.driver = d; if (this.remoteCb && d.subscribe) d.subscribe(this.remoteCb); },
     persist: function () { this.driver.saveAll(this.state); if (typeof Cloud !== 'undefined' && Cloud.connected) Cloud.pushDebounced(); },
     putEntry: function (e) { this.driver.putEntry(e); this.driver.saveAll(this.state); },
@@ -402,8 +445,8 @@
   function shortDay(ds) { return new Date(ds + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' }); }
 
   function dayResumen() {
-    var t = todayKey(), ents = data.entries.filter(function (e) { return e.date === t; }), d = new Date();
-    var html = '<div class="res-date">' + d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }) + '</div>';
+    var t = selectedDate, ents = data.entries.filter(function (e) { return e.date === t; }), d = new Date(t + 'T12:00:00');
+    var html = '<div class="res-date">' + (t === todayKey() ? 'Hoy · ' : '') + d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }) + '</div>';
     var sleep = ents.find(function (e) { return e.type === 'sleep'; });
     var sleepVal = sleep ? ((durStr(sleep.bed, sleep.wake, true) || '—') + (sleep.calidad ? ' · ' + sleep.calidad + '/5' : '')) : '—';
     var nMeals = ents.filter(function (e) { return e.type === 'meal'; }).length, nAct = ents.filter(function (e) { return e.type === 'act'; }).length, nDys = ents.filter(function (e) { return e.type === 'dys'; }).length;
@@ -576,7 +619,7 @@
 
   // ---------- análisis: temporal (causas retardadas + acumulado) ----------
   var TAU_FAST = 300 / Math.LN2, TAU_SLOW = 1800 / Math.LN2;
-  function minOfDay(e) { if (e.time) { var p = e.time.split(':'); return (+p[0]) * 60 + (+p[1]); } var m = momentOf(e); return m === 'Mañana' ? 600 : m === 'Tarde' ? 1020 : 1260; }
+  function minOfDay(e) { if (e.time) { var p = e.time.split(':'); return (+p[0]) * 60 + (+p[1]); } var m = momentOf(e); return m === 'Mañana' ? 600 : m === 'Mediodía' ? 840 : m === 'Tarde' ? 1020 : 1260; }
   function absMin(e) { return Math.round(new Date(e.date + 'T00:00:00').getTime() / 60000) + minOfDay(e); }
   function stimLoad(e) {
     if (e.type === 'sleep') { return (e.calidad && e.calidad <= 2) ? (3 - e.calidad) * 1.5 : 0; }
