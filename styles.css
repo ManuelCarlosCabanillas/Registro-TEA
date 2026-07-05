@@ -363,7 +363,7 @@ body {
 .tab span { font-size: 11px; }
 .tab.active { color: var(--accent-dark); font-weight: 600; }
 
-.hist-bar { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 8px; }
+.hist-bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-bottom: 8px; }
 .hist-day { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; }
 .hist-day h3 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
 .hist-day h3::first-letter { text-transform: uppercase; }
@@ -372,6 +372,7 @@ body {
 
 .btn-ghost { background: none; border: 1px solid var(--line); border-radius: var(--radius); padding: 7px 12px; font-size: 13px; cursor: pointer; color: var(--ink); font-family: inherit; }
 .btn-ghost.danger { color: var(--danger); border-color: #EBC7BC; }
+.btn-ghost.accent { color: var(--accent-dark); border-color: var(--accent); background: var(--accent-tint); font-weight: 600; }
 .btn-primary { background: var(--accent); border: none; color: #fff; border-radius: var(--radius); padding: 10px 20px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit; }
 .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
 

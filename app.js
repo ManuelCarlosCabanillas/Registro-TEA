@@ -1491,6 +1491,213 @@
     var a = document.createElement('a'); a.href = url; a.download = 'registro-tea-' + todayKey() + '.json'; a.click(); URL.revokeObjectURL(url);
   }
 
+  // ---------- Informe semanal imprimible (Fase 7) ----------
+  // Filas = la taxonomía del cuidador (su hoja semanal); columnas = los 7 días.
+  var REPORT_SIGNALS = [
+    { l: 'Puntillas / desequilibrio', keys: ['Puntillas', 'Desequilibrio', 'Se cae'] },
+    { l: 'Loqui / no para', keys: ['Loqui / como pelota', 'No para', 'Saltos', 'Espectáculo'] },
+    { l: 'Gritos', keys: ['Gritos'] },
+    { l: 'Habla mal', keys: ['Habla mal'] },
+    { l: 'Bloqueo', keys: ['Bloqueo'] },
+    { l: 'Oído / ruido', keys: ['Molesta ruido', 'Se tapa oídos', 'Pide tapones'] },
+    { l: 'Cansado / fatiga', keys: ['Cansado', 'Fatiga tranquila', 'Bostezos', 'Se tumba'] },
+    { l: 'Lloro / reactivo', keys: ['Lloro', 'Se reactiva', 'Se dispara'] },
+    { l: 'En positivo', keys: ['TODO BIEN', 'Tranquilo bien', 'Alegre bien', 'Colabora', 'Con ganas', 'Habla muy bien', 'Juega solo tranquilo'] }
+  ];
+  function daySignalCount(date, keys) {
+    var n = 0;
+    data.entries.forEach(function (e) { if (e.date === date && e.type === 'obs') (e.senales || []).forEach(function (s) { if (keys.indexOf(s) !== -1) n++; }); });
+    return n;
+  }
+  function dayReportData(date) {
+    var sleep = data.entries.find(function (e) { return e.type === 'sleep' && e.date === date; });
+    var nap = data.entries.find(function (e) { return e.type === 'nap' && e.date === date && (e.start || e.end || e.fallida); });
+    return {
+      sleep: sleep, nap: nap,
+      depos: data.entries.filter(function (e) { return e.type === 'salud' && e.subtipo === 'Deposición' && e.date === date; }).length,
+      dys: data.entries.filter(function (e) { return e.type === 'dys' && e.date === date; }).length,
+      calN: sleep && sleep.eventosNoche ? sleep.eventosNoche.filter(function (x) { return x.tipo === 'Calambres'; }).length : 0,
+      val: dayValoracion(date)
+    };
+  }
+  var REPORT_CSS = 'html,body{margin:0}*{box-sizing:border-box}body{font-family:-apple-system,system-ui,Segoe UI,Roboto,sans-serif;padding:16px;color:#2b2a26;background:#fff}.rep{max-width:920px;margin:0 auto}.rep-head h1{font-size:18px;margin:0 0 2px}.rep-head .sub{color:#777;font-size:13px;margin-bottom:12px}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #ddd;padding:5px 4px;text-align:center}th.rl,td.rl{text-align:left;font-weight:600;white-space:nowrap;width:132px;color:#555}th .wd{display:block;font-size:10px;color:#888}th .dn{font-weight:700}th.s-good{background:#dcedc5}th.s-mid{background:#f7e2b5}th.s-bad{background:#f2c4bd}th.s-none{background:#f3f2ee}tr.sec td{background:#f3f2ee;text-align:left;font-weight:700;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:.04em}td.hit{background:#eef5e3;font-weight:600;color:#3b6d11}.leg{color:#888;font-size:11px;margin-top:10px;line-height:1.5}.pbtn{margin-top:14px;padding:9px 16px;border:none;border-radius:8px;background:#639922;color:#fff;font-size:14px;cursor:pointer}@media print{.pbtn{display:none}body{padding:0}}';
+  function weekReportHtml(weekStart) {
+    var days = []; for (var i = 0; i < 7; i++) days.push(addDays(weekStart, i));
+    var wd = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
+    var dn = days.map(function (ds) { return new Date(ds + 'T12:00:00').getDate(); });
+    var perDay = days.map(dayReportData);
+    var name = esc(data.child.name || '');
+    var range = new Date(weekStart + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long' }) + ' – ' + new Date(days[6] + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+    function head() { return '<tr><th class="rl"></th>' + days.map(function (ds, i) { var st = dayState(ds); return '<th class="' + st.s + '"><span class="wd">' + wd[i] + '</span><span class="dn">' + dn[i] + '</span></th>'; }).join('') + '</tr>'; }
+    function sec(t) { return '<tr class="sec"><td colspan="8">' + t + '</td></tr>'; }
+    function valRow(label, fn) { return '<tr><td class="rl">' + label + '</td>' + perDay.map(function (p) { var v = fn(p); return '<td>' + (v || v === 0 && v !== 0 ? esc(v) : (v ? esc(v) : '·')) + '</td>'; }).join('') + '</tr>'; }
+    function sigRow(sig) { return '<tr><td class="rl">' + sig.l + '</td>' + days.map(function (ds) { var n = daySignalCount(ds, sig.keys); return '<td class="' + (n ? 'hit' : '') + '">' + (n ? (n > 1 ? n : '●') : '·') + '</td>'; }).join('') + '</tr>'; }
+    var r = head();
+    r += sec('Sueño');
+    r += valRow('Despierta', function (p) { return p.sleep && p.sleep.wake; });
+    r += valRow('Siesta', function (p) { return p.nap ? (p.nap.fallida && !p.nap.start ? 'no' : (p.nap.start || '?') + '–' + (p.nap.end || '?')) : ''; });
+    r += valRow('Acuesto', function (p) { return p.sleep && p.sleep.bed; });
+    r += valRow('Noche', function (p) { return p.sleep ? (p.sleep.calidadTexto || (p.sleep.calidad ? p.sleep.calidad + '/5' : '')) : ''; });
+    r += valRow('Calambres noche', function (p) { return p.calN || ''; });
+    r += sec('Estado y conducta');
+    REPORT_SIGNALS.forEach(function (sig) { r += sigRow(sig); });
+    r += sec('Cuerpo y día');
+    r += valRow('Deposición', function (p) { return p.depos || ''; });
+    r += valRow('Desajustes', function (p) { return p.dys || ''; });
+    r += valRow('Valoración', function (p) { return p.val ? dayValOf(p.val).em : ''; });
+    return '<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Informe semanal · ' + name + '</title><style>' + REPORT_CSS + '</style></head><body><div class="rep"><div class="rep-head"><h1>Registro TEA — ' + name + '</h1><div class="sub">Semana: ' + range + '</div></div><table>' + r + '</table><div class="leg">● señal presente ese día · un número = nº de veces · el color del encabezado del día es la valoración global (verde = bien · ámbar = regular · rojo = difícil).</div><button class="pbtn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button></div></body></html>';
+  }
+  function openWeekReport() {
+    var w = window.open('', '_blank');
+    if (!w) { toast('Permite las ventanas emergentes para ver el informe'); return; }
+    w.document.write(weekReportHtml(weekStartOf(histAnchor)));
+    w.document.close();
+  }
+
+  // ---------- Export CSV (Fase 7) ----------
+  function csvDetail(e) {
+    if (e.type === 'sleep') return 'sueño ' + (e.bed || '?') + '->' + (e.wake || '?') + (e.calidad ? ' cal ' + e.calidad + '/5' : '') + ((e.eventosNoche || []).length ? ' · ' + e.eventosNoche.map(function (x) { return x.tipo + (x.hora ? ' ' + x.hora : ''); }).join('; ') : '');
+    if (e.type === 'nap') return 'siesta ' + (e.start || '?') + '->' + (e.end || '?') + (e.fallida ? ' (fallida)' : '');
+    if (e.type === 'meal') { var s = mealSummary(e); return s.title + ': ' + s.sub; }
+    if (e.type === 'act') { var a = actSummary(e); return a.title + ' — ' + a.sub; }
+    if (e.type === 'dys') { var d = dysSummary(e); return d.title + ' — ' + d.sub; }
+    if (e.type === 'obs') { var o = obsSummary(e); return o.title + ' — ' + o.sub; }
+    if (e.type === 'salud') return (e.subtipo || 'salud') + (e.detalle ? ' ' + e.detalle : '') + (e.nota ? ' (' + e.nota + ')' : '');
+    if (e.type === 'rutina') return (e.tipo || 'rutina') + (e.valoracion ? ' ' + e.valoracion : '');
+    if (e.type === 'day') return 'valoración del día: ' + (e.valoracion || '') + (e.nota ? ' — ' + e.nota : '');
+    return '';
+  }
+  function exportCSV() {
+    var lines = ['fecha,tipo,momento,hora,detalle'];
+    data.entries.slice().sort(function (a, b) { return (a.date + (a.time || '')) < (b.date + (b.time || '')) ? -1 : 1; }).forEach(function (e) {
+      lines.push([e.date, e.type, momentOf(e), e.time || '', '"' + String(csvDetail(e)).replace(/"/g, '""') + '"'].join(','));
+    });
+    var blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = url; a.download = 'registro-tea-' + todayKey() + '.csv'; a.click(); URL.revokeObjectURL(url);
+  }
+
+  // ---------- Importador del registro manuscrito (Fase 7) ----------
+  // Convierte el JSON del registro mensual (formato { dias: [...] }) a entradas de la app,
+  // de forma determinista (mismo mapeo que probamos con junio). Marca origen:'junio'.
+  var IMPORT_OBS = [
+    [/puntillas/, 'Puntillas'], [/deseq/, 'Desequilibrio'], [/se cae/, 'Se cae'],
+    [/loqui|como pelota/, 'Loqui / como pelota'], [/no para/, 'No para'], [/salta|saltos/, 'Saltos'],
+    [/trepar|hacer fuerza/, 'Trepar / fuerza'], [/espect[áa]culo/, 'Espectáculo'], [/tenso/, 'Tenso'],
+    [/grito/, 'Gritos'], [/habla muy bien|abla muy bien/, 'Habla muy bien'],
+    [/habla mal|abla mal/, 'Habla mal'], [/habla bien|abla bien/, 'Habla bien'], [/acelerado/, 'Habla acelerado'],
+    [/callado/, 'Se queda callado'], [/bloque/, 'Bloqueo'],
+    [/cansad/, 'Cansado'], [/bostez/, 'Bostezos'], [/se tumba|tumbado/, 'Se tumba'], [/fatiga/, 'Fatiga tranquila'],
+    [/chupete|bibe/, 'Chupete / bibe'], [/reactiv/, 'Se reactiva'], [/se dispara/, 'Se dispara'],
+    [/llora|lloro/, 'Lloro'], [/aguanta/, 'Aguanta el lloro'], [/alegre/, 'Alegre'], [/nervioso/, 'Nervioso'],
+    [/emoci[óo]n/, 'Emoción'], [/miedo|susto/, 'Miedo / susto'],
+    [/ruido|pitos/, 'Molesta ruido'], [/tapones/, 'Pide tapones'], [/tapa o[íi]dos/, 'Se tapa oídos'],
+    [/todo bien/, 'TODO BIEN'], [/colabora/, 'Colabora'], [/con ganas|ganas/, 'Con ganas'],
+    [/juega solo|jugando solo/, 'Juega solo tranquilo'], [/tranquilo/, 'Tranquilo bien']
+  ];
+  function iLow(s) { return String(s == null ? '' : s).toLowerCase(); }
+  function iObsSenales(desc) { var t = iLow(desc), r = []; IMPORT_OBS.forEach(function (p) { if (p[0].test(t) && r.indexOf(p[1]) === -1) r.push(p[1]); }); return r; }
+  function iValencia(desc) { var t = iLow(desc); if (/crisis|rabieta|grito|deseq|bloque|se dispara|reactiv|desbord/.test(t)) return 'Difícil'; if (/todo bien|perfecto|muy bien|tranquilo|alegre|colabora|con ganas/.test(t)) return 'Bien'; return null; }
+  function iCalNum(txt) { var t = iLow(txt); if (!t) return null; if (/súper|super movida|no hemos dormido|palpitaciones|mala/.test(t)) return 1; if (/muy buena|super buena|buena!|estiramientos/.test(t)) return 5; if (/movida|dura|regular|mucho sentar|calambre/.test(t)) return 2; if (/≈|aproximad/.test(t)) return 3; if (/buena|bien|mejor/.test(t)) return 4; return null; }
+  function iCalTexto(c) { return { 5: 'Buena', 4: 'Buena', 3: '≈ Buena', 2: 'Movida', 1: 'Mala' }[c] || null; }
+  function iNoche(desc) { var t = iLow(desc); if (!t) return null; if (/calambre/.test(t)) return 'Calambres'; if (/palpitaci/.test(t)) return 'Palpitaciones'; if (/se sienta|sentar/.test(t)) return 'Se sienta'; if (/respiraci|nariz|mocos/.test(t)) return 'Respiración / nariz'; if (/sudor/.test(t)) return 'Sudor'; if (/llanto|llora/.test(t)) return 'Llanto'; if (/vuelve a dormir|se despierta/.test(t)) return 'Se despierta y vuelve'; if (/movimiento|movido/.test(t)) return 'Mucho movimiento'; return null; }
+  function iPersonas(desc) { var t = iLow(desc), r = []; if (/mar[íi]a/.test(t)) r.push('María'); if (/roc[íi]o/.test(t)) r.push('Rocío'); if (/logopeda/.test(t)) r.push('Logopeda'); if (/aitor/.test(t)) r.push('Aitor'); if (/abuela|yaya/.test(t)) r.push('Abuela'); if (/abuelo/.test(t)) r.push('Abuelo'); return r; }
+  function iActTipo(desc, fb) { var t = iLow(desc); if (/piscina/.test(t)) return 'Piscina'; if (/monte|excursi/.test(t)) return 'Excursión / monte'; if (/m[ée]dico|pediatra|revisi/.test(t)) return 'Médico'; if (/super|mercadona|compra/.test(t)) return 'Supermercado'; if (/mar[íi]a|logopeda|terapia|sesi/.test(t)) return 'Terapia'; if (/parque/.test(t)) return 'Parque'; if (/paseo/.test(t)) return 'Paseo'; return fb; }
+  function iRutinaVal(s) { var t = iLow(s); if (!t) return null; if (/reactiv|loco|grito|no quiere|no quiso|lo siguiente/.test(t)) return 'Reactivo'; if (/relaj/.test(t)) return 'Relaja'; if (/regular/.test(t)) return 'Regular'; if (/bien|colabora|tranquil|perfect/.test(t)) return 'Bien'; return null; }
+  function iHygiene(d) { return /ducha|bañera|baño/.test(iLow(d)); }
+  function iHygieneTipo(d) { return /bañera|baño/.test(iLow(d)) ? 'Bañera' : 'Ducha'; }
+  function iMealLugar(l) { var t = iLow(l); if (!t) return null; if (/sof[áa]|sal[óo]n/.test(t)) return 'Sofá'; if (/coche/.test(t)) return 'Coche'; if (/parque|faunia|campo|monte/.test(t)) return 'Parque'; if (/suelo/.test(t)) return 'Suelo'; if (/mesa/.test(t)) return 'Mesa'; if (/bar/.test(t)) return 'Bar'; return 'Otro'; }
+  function iMealComo(notas, lug) { var t = iLow(notas + ' ' + lug); if (!t.trim()) return null; if (/loco|lo siguiente|espect[áa]cul|desbord/.test(t)) return 'Loco'; if (/activ|reactiv|disparad|movido|no para|inquiet|acelerad|nervios/.test(t)) return 'Activado'; if (/jugando|juega|juego/.test(t)) return 'Jugando'; if (/tranquil|calmad|sentado|bien|colabora/.test(t)) return 'Tranquilo'; return null; }
+  function iTrans(txt) { var t = iLow(txt), tr = {}; if (/salida[^.]*con ganas/.test(t)) tr.salida = 'Con ganas'; else if (/cuesta salir|salida[^.]*cuesta/.test(t)) tr.salida = 'Cuesta'; else if (/salida[^.]*llor/.test(t)) tr.salida = 'Lloro'; else if (/salida[^.]*bien/.test(t)) tr.salida = 'Bien'; if (/vuelta[^.]*grito/.test(t)) tr.vuelta = 'Gritos'; else if (/vuelta[^.]*loqui/.test(t)) tr.vuelta = 'Loqui'; else if (/vuelta[^.]*(duerme|dormid)/.test(t)) tr.vuelta = 'Se duerme'; else if (/vuelta[^.]*(bien|perfect)/.test(t)) tr.vuelta = 'Bien'; if (/(entrada|casa)[^.]*loco/.test(t)) tr.entrada = 'Loco'; else if (/(entrada|casa)[^.]*reactiv/.test(t)) tr.entrada = 'Reactivo'; else if (/entrada[^.]*bien|casa[^.]*bien/.test(t)) tr.entrada = 'Bien'; return tr; }
+  function iDayVal(txt, nInc) { var t = iLow(txt); if (nInc >= 3 || /crisis|rabieta|desbord|muy dif[íi]cil|fatal|horrible|d[íi]a duro/.test(t)) return 'Difícil'; if (/todo bien|perfecto|muy bien|genial|redondo|estupend/.test(t)) return 'TODO BIEN'; if (nInc >= 1 || /regular|irregular|mezcla|movido|reactiv/.test(t)) return 'Regular'; if (t.trim()) return 'Bien'; return null; }
+  var OUTING_T = ['Piscina', 'Parque', 'Paseo', 'Terapia', 'Médico', 'Supermercado', 'Visita / familia'];
+  function convertRegistro(raw) {
+    var out = [], seq = 0;
+    function id() { return 'imp' + Date.now().toString(36) + '_' + (seq++).toString(36); }
+    function join(arr, f) { return (arr || []).map(f || function (x) { return typeof x === 'string' ? x : (x && x.descripcion) || ''; }).join(' . '); }
+    (raw.dias || []).forEach(function (d) {
+      var date = d.fecha; if (!date) return;
+      var sn = d.sueno_noche || {}, sies = d.siesta || {}, desp = d.despertar || {};
+      var rut = {}, lastAct = null, outingAct = null;
+      // SUEÑO
+      if (sn.hora_dormir || desp.hora || sn.calidad) {
+        var cal = iCalNum(sn.calidad), ev = [];
+        (sn.eventos || []).forEach(function (x) { var tp = iNoche(x.descripcion); if (tp) ev.push({ tipo: tp, hora: x.hora || '' }); });
+        var sc = iLow(sn.calidad + ' ' + join(sn.eventos)), fac = /dif[íi]cil|cuesta|se reactiva/.test(sc) ? 'Difícil' : (/f[áa]cil/.test(sc) ? 'Fácil' : null);
+        var dn = iLow(desp.notas), dc = /yo/.test(dn) ? 'Le despierto' : (/llor/.test(dn) ? 'Llorando' : null), de = [];
+        if (/bien|alegre|perfecto/.test(dn)) de.push('Bien'); if (/cansad/.test(dn)) de.push('Cansado'); if (/llor/.test(dn)) de.push('Lloro');
+        out.push({ id: id(), type: 'sleep', date: date, time: '', moment: 'Noche', origen: 'junio', bed: sn.hora_dormir || '', wake: desp.hora || '', calidad: cal, calidadTexto: cal ? iCalTexto(cal) : null, facilidad: fac, despertarComo: dc, despertarEstado: de, eventosNoche: ev, ayudas: [] });
+      }
+      // SIESTA
+      if (sies.inicio || sies.fin || /no (llega|puede|hay manera)|casi se duerme/.test(iLow(sies.notas))) {
+        var snn = iLow(sies.notas), nac = /se dispara|reactiva|cuesta|dif[íi]cil/.test(snn) ? 'Difícil' : (/tumbado/.test(snn) ? 'Tumbado sin dormir' : (/f[áa]cil|solo/.test(snn) ? 'Fácil' : null));
+        out.push({ id: id(), type: 'nap', date: date, time: '', moment: momentFromTime(sies.inicio) || 'Tarde', origen: 'junio', start: sies.inicio || '', end: sies.fin || '', fallida: /no (llega|puede)|casi se duerme.*no|no puede dorm/.test(snn), acuesto: nac, despertar: /no hay manera/.test(snn) ? 'No hay manera' : null, nota: sies.notas || '' });
+      }
+      // COMIDAS
+      (d.comidas || []).forEach(function (c) {
+        var al = (c.alimentos || []).map(function (a) { return { nombre: a }; });
+        var toma = /otro|toma|snack/.test(iLow(c.tipo)) || /chuches|helado|chuche/.test(iLow((c.alimentos || []).join(' ')));
+        out.push({ id: id(), type: 'meal', date: date, time: c.hora || '', moment: momentFromTime(c.hora) || 'Mediodía', origen: 'junio', nombre: c.tipo || 'Comida', alimentos: al, lugar: iMealLugar(c.lugar), tele: /tele|pantalla/.test(iLow(c.lugar + ' ' + c.notas)), comoEstuvo: iMealComo(c.notas, c.lugar), tomaExtra: toma, nota: c.notas || '' });
+      });
+      // ACTIVIDADES (higiene -> rutina; resto -> act con personas)
+      (d.actividades || []).forEach(function (a) {
+        if (iHygiene(a.descripcion)) { var rt = iHygieneTipo(a.descripcion); if (!rut[rt]) rut[rt] = { hora: a.hora || '', val: iRutinaVal(a.descripcion), nota: a.descripcion }; else if (!rut[rt].val) rut[rt].val = iRutinaVal(a.descripcion); return; }
+        var raw0 = String(a.descripcion || '').split(/[.,\n]/)[0].slice(0, 40).trim(), tipo = iActTipo(a.descripcion, raw0), aid = id();
+        out.push({ id: aid, type: 'act', date: date, time: a.hora || '', moment: momentFromTime(a.hora) || 'Tarde', origen: 'junio', tipo: tipo, nota: a.descripcion || '', compania: iPersonas(a.descripcion), ambiente: [], senales: [], estrategias: [], transiciones: {} });
+        lastAct = aid; if (OUTING_T.indexOf(tipo) !== -1) outingAct = aid;
+      });
+      // INTENTO FALLIDO de cole
+      var ffTxt = iLow(join(d.incidencias) + ' . ' + join(d.estado_y_conducta));
+      if (/intento.{0,30}(cole|colegio).{0,30}(fallido|nada)|intento (de )?ir al cole/.test(ffTxt)) {
+        out.push({ id: id(), type: 'act', date: date, time: '', moment: 'Mañana', origen: 'junio', tipo: 'Colegio', nota: 'Intento de ir al cole fallido', compania: [], ambiente: [], senales: [], estrategias: [], transiciones: {}, intentoFallido: true });
+      }
+      // INCIDENCIAS -> dys
+      (d.incidencias || []).forEach(function (inc) {
+        var tp = String(inc.descripcion || '').slice(0, 40).trim();
+        out.push({ id: id(), type: 'dys', date: date, time: inc.hora || '', moment: momentFromTime(inc.hora) || 'Tarde', origen: 'junio', tipos: tp ? [tp] : [], antecedentes: [], senales: [], sensorial: [], ayudo: [], intensidad: null, nota: inc.descripcion || '', completo: true });
+      });
+      // ESTADO Y CONDUCTA -> obs (+ higiene en el estado)
+      (d.estado_y_conducta || []).forEach(function (ec) {
+        var mo = momentFromTime(ec.hora) || ({ 'mañana': 'Mañana', 'mediodía': 'Mediodía', 'tarde': 'Tarde', 'noche': 'Noche' }[iLow(ec.momento)]) || 'Tarde';
+        out.push({ id: id(), type: 'obs', date: date, time: ec.hora || '', moment: mo, origen: 'junio', senales: iObsSenales(ec.descripcion), valencia: iValencia(ec.descripcion), contexto: null, nota: ec.descripcion || '' });
+        if (iHygiene(ec.descripcion)) { var rt2 = iHygieneTipo(ec.descripcion), rv = iRutinaVal(ec.descripcion); if (!rut[rt2]) rut[rt2] = { hora: ec.hora || '', val: rv, nota: ec.descripcion }; else if (!rut[rt2].val && rv) rut[rt2].val = rv; }
+      });
+      // DEPOSICIONES -> salud
+      (d.deposiciones || []).forEach(function (dep) {
+        out.push({ id: id(), type: 'salud', date: date, time: dep.hora || '', moment: momentFromTime(dep.hora) || 'Mediodía', origen: 'junio', subtipo: 'Deposición', detalle: null, nota: dep.notas || '' });
+      });
+      // RUTINAS
+      Object.keys(rut).forEach(function (rt) { out.push({ id: id(), type: 'rutina', date: date, time: rut[rt].hora || '', moment: momentFromTime(rut[rt].hora) || 'Noche', origen: 'junio', tipo: rt, valoracion: rut[rt].val || null, nota: rut[rt].nota || '' }); });
+      // TRANSICIONES -> a la salida principal
+      var tr = iTrans(join(d.estado_y_conducta) + ' . ' + join(d.otros));
+      if (Object.keys(tr).length) { var tid = outingAct || lastAct; if (tid) { var tgt = out.find(function (x) { return x.id === tid; }); if (tgt) tgt.transiciones = tr; } }
+      // VALORACIÓN DEL DÍA
+      var dv = iDayVal(join(d.estado_y_conducta) + ' . ' + join(d.otros), (d.incidencias || []).length);
+      if (dv) out.push({ id: id(), type: 'day', date: date, time: '', moment: 'Noche', origen: 'junio', valoracion: dv, nota: null });
+    });
+    return out;
+  }
+  function importFromFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var raw; try { raw = JSON.parse(reader.result); } catch (e) { toast('El archivo no es un JSON válido'); return; }
+      var toAdd;
+      if (raw && Array.isArray(raw.dias)) toAdd = convertRegistro(raw);
+      else if (raw && Array.isArray(raw.entries)) toAdd = raw.entries.map(function (e) { e.origen = e.origen || 'import'; return e; });
+      else { toast('Formato no reconocido (esperaba registro mensual o export de la app)'); return; }
+      if (!toAdd.length) { toast('No encontré registros para importar'); return; }
+      var yaJunio = data.entries.some(function (e) { return e.origen === 'junio'; });
+      var msg = 'Voy a importar ' + toAdd.length + ' registros de ' + (Array.isArray(raw.dias) ? raw.dias.length + ' días' : 'un export') + '.' + (yaJunio ? '\n\n(Ya hay datos importados; se añadirán igualmente.)' : '') + '\n\n¿Continuar?';
+      if (!confirm(msg)) return;
+      Array.prototype.push.apply(data.entries, toAdd);
+      // re-sembrar banco con alimentos importados nuevos
+      toAdd.forEach(function (e) { if (e.type === 'meal') (e.alimentos || []).forEach(function (f) { if (f.nombre && !data.bank.some(function (b) { return b.toLowerCase() === f.nombre.toLowerCase(); })) data.bank.push(f.nombre); }); });
+      save(); renderHistory(); renderHoy();
+      toast('✓ Importados ' + toAdd.length + ' registros');
+    };
+    reader.readAsText(file);
+  }
+
   var toastT;
   function toast(msg) { var t = $('toast'); t.textContent = msg; t.hidden = false; requestAnimationFrame(function () { t.classList.add('show'); }); clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove('show'); setTimeout(function () { t.hidden = true; }, 250); }, 1600); }
 
@@ -2085,6 +2292,10 @@
 
     document.querySelectorAll('.tab').forEach(function (t) { t.addEventListener('click', function () { switchView(t.dataset.view); }); });
     $('exportBtn').addEventListener('click', exportData);
+    $('exportCsvBtn').addEventListener('click', exportCSV);
+    $('reportBtn').addEventListener('click', openWeekReport);
+    $('importBtn').addEventListener('click', function () { $('importInput').click(); });
+    $('importInput').addEventListener('change', function () { if (this.files && this.files[0]) importFromFile(this.files[0]); this.value = ''; });
     $('clearBtn').addEventListener('click', function () { if (confirm('¿Borrar TODOS los registros?')) { data.entries = []; data.docs = []; save(); renderHistory(); } });
   }
 

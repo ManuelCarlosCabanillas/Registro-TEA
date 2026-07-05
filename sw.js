@@ -1,4 +1,4 @@
-var CACHE = 'tea-v13';
+var CACHE = 'tea-v14';
 var ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', function (e) {
