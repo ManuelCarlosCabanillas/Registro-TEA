@@ -500,3 +500,13 @@ body {
 .an-sub { font-size: 12.5px; font-weight: 600; color: var(--muted); margin: 12px 0 4px; }
 .an-note { font-size: 13px; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; }
 .rut-mix { margin-left: auto; font-size: 13px; color: var(--muted); }
+
+/* ===== El día completo (Fase 6) ===== */
+.day-val { gap: 8px; }
+.day-val .chip { flex: 1 1 40%; text-align: center; padding: 11px 8px; font-size: 14px; }
+.daycard #dayNota { margin-top: 10px; }
+.mini-sheet { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin: 4px 0 14px; background: var(--surface); }
+.ms-row { display: flex; align-items: baseline; gap: 10px; padding: 8px 12px; font-size: 13px; }
+.ms-row + .ms-row { border-top: 1px solid var(--line); }
+.ms-row .ms-k { min-width: 108px; max-width: 108px; color: var(--muted); font-weight: 600; }
+.ms-row .ms-v { flex: 1; color: var(--ink); }

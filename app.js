@@ -2,7 +2,7 @@
   'use strict';
 
   var STORE_KEY = 'appTEA.v1';
-  var DATA_VERSION = 16;
+  var DATA_VERSION = 17;
 
   // ===== Config Supabase (claves públicas de cliente) =====
   var SUPABASE_URL = 'https://ntsgnvfmvlokujmddyjj.supabase.co';
@@ -78,6 +78,14 @@
   ];
   function mealComoEm(v) { var f = MEAL_COMO.find(function (x) { return x.v === v; }); return f ? f.em : ''; }
   function mealComoBad(v) { return v === 'Activado' || v === 'Loco'; }
+  // ----- Valoración global del día (Fase 6) -----
+  var DAY_VAL = [
+    { v: 'TODO BIEN', em: '😃', c: 4, s: 's-good' }, { v: 'Bien', em: '🙂', c: 3, s: 's-good' },
+    { v: 'Regular', em: '😐', c: 2, s: 's-mid' }, { v: 'Difícil', em: '😣', c: 1, s: 's-bad' }
+  ];
+  function dayValOf(v) { return DAY_VAL.find(function (x) { return x.v === v; }); }
+  function getDayEntry(date) { return data.entries.find(function (e) { return e.type === 'day' && e.date === date; }); }
+  function dayValoracion(date) { var e = getDayEntry(date); return e ? e.valoracion : null; }
 
   var ACT_TYPES = ['Juego con mamá', 'Juego con papá', 'Juego con otro adulto', 'Juego con otros niños', 'Juego solo', 'Paseo', 'Deporte', 'Parque', 'Piscina', 'Excursión / monte', 'Estudio / deberes', 'Colegio', 'Terapia', 'Médico', 'Pantalla', 'Llamada / vídeo', 'Música', 'Lectura / cuento', 'Manualidades', 'Comida en familia', 'Rutina de dormir', 'Visita / familia', 'Supermercado', 'Otra'];
   var ACT_LUGAR = ['Casa', 'Calle', 'Cole', 'Casa de otros', 'Aire libre', 'Coche', 'Otro'];
@@ -465,6 +473,7 @@
     renderObs();
     renderSalud();
     renderRutina();
+    renderDayClose();
     renderTimeline();
   }
 
@@ -670,7 +679,7 @@
 
   // ---------- línea del día (timeline) ----------
   function renderTimeline() {
-    var ents = data.entries.filter(function (e) { return e.date === selectedDate; });
+    var ents = data.entries.filter(function (e) { return e.date === selectedDate && e.type !== 'day'; });
     var card = $('timelineCard');
     if (ents.length < 2) { card.hidden = true; return; }
     card.hidden = false;
@@ -725,6 +734,51 @@
     $('rutinaBackdrop').hidden = false;
   }
   function closeRutina() { var e = byId(openRutina); if (e && !e.tipo && !e.valoracion && !e.nota) removeEntry(openRutina); $('rutinaBackdrop').hidden = true; openRutina = null; renderHoy(); }
+
+  // ---------- cierre del día: valoración global (Fase 6) ----------
+  function renderDayClose() {
+    var e = getDayEntry(selectedDate);
+    fill($('dayVal'), DAY_VAL.map(function (o) {
+      return chip(o.em + ' ' + o.v, !!(e && e.valoracion === o.v), function () { setDayVal(o.v); }, o.s === 's-bad' ? 'chip-warn' : (o.s === 's-good' ? 'chip-good' : null));
+    }));
+    $('dayNota').value = (e && e.nota) || '';
+  }
+  function cleanDayEntry() { var e = getDayEntry(selectedDate); if (e && !e.valoracion && !(e.nota && e.nota.trim())) removeEntry(e.id); }
+  function setDayVal(v) {
+    var e = getDayEntry(selectedDate);
+    if (!e) e = addEntry('day', { valoracion: v, moment: 'Noche' });
+    else e.valoracion = (e.valoracion === v ? null : v);
+    cleanDayEntry(); save(); renderHoy();
+    if (v && dayValoracion(selectedDate) === v) toast(dayValOf(v).em + ' Día: ' + v);
+  }
+  function setDayNota(txt) {
+    var e = getDayEntry(selectedDate);
+    if (!e) { if (!txt.trim()) return; e = addEntry('day', { nota: txt, moment: 'Noche' }); }
+    else e.nota = txt;
+    save();
+  }
+  function daySignals(date) {
+    var counts = {};
+    data.entries.filter(function (e) { return e.type === 'obs' && e.date === date; }).forEach(function (e) { (e.senales || []).forEach(function (s) { counts[s] = (counts[s] || 0) + 1; }); });
+    return topN(counts, 4).map(function (x) { return x.k; });
+  }
+  // Mini-hoja del día al estilo de su registro manuscrito (Despierta · Siesta · Acuesto · Noche · Señales · Valoración).
+  function dayMiniSheet(date) {
+    var sleep = data.entries.find(function (e) { return e.type === 'sleep' && e.date === date; });
+    var nap = data.entries.find(function (e) { return e.type === 'nap' && e.date === date && (e.start || e.end || e.fallida); });
+    var val = dayValoracion(date), dv = val ? dayValOf(val) : null;
+    var desp = sleep ? ((sleep.wake || '—') + (sleep.despertarEstado && sleep.despertarEstado.length ? ' · ' + sleep.despertarEstado.join(', ').toLowerCase() : (sleep.despertarComo ? ' · ' + sleep.despertarComo.toLowerCase() : ''))) : '—';
+    var siesta = nap ? (nap.fallida && !nap.start ? 'no llega' : (nap.start || '?') + '–' + (nap.end || '?') + (durStr(nap.start, nap.end, false) ? ' (' + durStr(nap.start, nap.end, false) + ')' : '')) : '—';
+    var acuesto = sleep ? ((sleep.bed || '—') + (sleep.facilidad ? ' · ' + sleep.facilidad.toLowerCase() : '')) : '—';
+    var noche = sleep ? ((sleep.calidadTexto || (sleep.calidad ? sleep.calidad + '/5' : '—')) + (sleep.eventosNoche && sleep.eventosNoche.length ? ' · ' + sleep.eventosNoche.length + ' evento' + (sleep.eventosNoche.length > 1 ? 's' : '') + ' noche' : '')) : '—';
+    var sig = daySignals(date);
+    var rows = [
+      ['🌅', 'Despierta', desp], ['😴', 'Siesta', siesta], ['🛏️', 'Acuesto', acuesto],
+      ['🌙', 'Noche', noche], ['⚡', 'Señales', sig.length ? sig.join(', ') : '—'],
+      ['🌟', 'Valoración', dv ? dv.em + ' ' + val : '—']
+    ];
+    return '<div class="mini-sheet">' + rows.map(function (r) { return '<div class="ms-row"><span class="ms-k">' + r[0] + ' ' + r[1] + '</span><span class="ms-v">' + esc(r[2]) + '</span></div>'; }).join('') + '</div>';
+  }
 
   // ---------- perfil ----------
   function renderPerfilSheet() {
@@ -792,8 +846,9 @@
   function shortDay(ds) { return new Date(ds + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric' }); }
 
   function dayResumen() {
-    var t = selectedDate, ents = data.entries.filter(function (e) { return e.date === t; }), d = new Date(t + 'T12:00:00');
+    var t = selectedDate, ents = data.entries.filter(function (e) { return e.date === t && e.type !== 'day'; }), d = new Date(t + 'T12:00:00');
     var html = '<div class="res-date">' + (t === todayKey() ? 'Hoy · ' : '') + d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }) + '</div>';
+    html += dayMiniSheet(t);
     var sleep = ents.find(function (e) { return e.type === 'sleep'; });
     var tot = totalSleepMin(t);
     var sleepVal = (tot != null ? fmtDur(tot) : '—') + (sleep && sleep.calidad ? ' · ' + sleep.calidad + '/5' : '');
@@ -848,6 +903,10 @@
     if (!ents.length) return { s: 's-none', label: 'sin datos' };
     var dys = ents.filter(function (e) { return e.type === 'dys'; });
     var maxInt = Math.max.apply(null, dys.map(function (e) { return e.intensidad || 0; }).concat([0]));
+    // La valoración manual del cuidador manda: es su juicio del día. Los desajustes
+    // solo colorean el día cuando aún no hay valoración (color automático de reserva).
+    var val = dayValoracion(ds);
+    if (val) { var dv = dayValOf(val); return { s: dv.s, label: dv.em + ' ' + val.toLowerCase() }; }
     if (dys.length >= 3 || maxInt >= 5) return { s: 's-bad', label: 'día difícil' };
     if (dys.length >= 1) return { s: 's-mid', label: 'regular' };
     return { s: 's-good', label: 'buen día' };
@@ -889,9 +948,10 @@
     return '<div class="legend"><span><i class="s-good"></i>buen día</span><span><i class="s-mid"></i>regular</span><span><i class="s-bad"></i>difícil</span><span><i class="s-none"></i>sin datos</span></div>';
   }
   function dayDetailHtml(ds) {
-    var ents = data.entries.filter(function (e) { return e.date === ds; }), d = new Date(ds + 'T12:00:00'), st = dayState(ds);
+    var ents = data.entries.filter(function (e) { return e.date === ds && e.type !== 'day'; }), d = new Date(ds + 'T12:00:00'), st = dayState(ds);
     var html = '<div class="day-detail"><div class="dd-head"><div><h3>' + d.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }) + '</h3><span class="dd-state ' + st.s + '">' + st.label + '</span></div><button class="btn-ghost" id="editDay">✏️ Editar este día</button></div>';
-    if (!ents.length) return html + '<div class="list-empty">Sin registros este día.</div></div>';
+    if (!ents.length && !dayValoracion(ds)) return html + '<div class="list-empty">Sin registros este día.</div></div>';
+    html += dayMiniSheet(ds);
     MOMENTS.forEach(function (m) {
       var evs = ents.filter(function (e) { return momentOf(e) === m.key; }).sort(function (a, b) { return (a.time || '99') < (b.time || '99') ? -1 : 1; });
       if (!evs.length) return;
@@ -1538,6 +1598,7 @@
     if (e.type === 'meal') return { tipo: 'comida', nombre: e.nombre || 'comida', momento: momentOf(e), aceptacion: e.aceptacion || null, lugar: e.lugar || null, tele: !!e.tele, como_estuvo: e.comoEstuvo || null, toma_suelta: !!e.tomaExtra, alimentos: (e.alimentos || []).map(function (f) { return f.nombre; }) };
     if (e.type === 'act') { var tr = e.transiciones || {}; return { tipo: 'actividad', actividad: e.tipo || null, momento: momentOf(e), lugar: e.lugar || null, con_quien: (e.compania || []).filter(function (c) { return c !== 'Solo'; }), termino: e.termino || null, primera_vez: !!e.primeraVez, intento_fallido: !!e.intentoFallido, transiciones: { salida: tr.salida || null, vuelta: tr.vuelta || null, entrada: tr.entrada || null }, con_desajuste: actHasDys(e) }; }
     if (e.type === 'rutina') return { tipo: 'rutina', rutina: e.tipo || null, momento: momentOf(e), hora: e.time || null, valoracion: e.valoracion || null };
+    if (e.type === 'day') return { tipo: 'valoracion_dia', valoracion: e.valoracion || null, nota: e.nota || null };
     if (e.type === 'dys') { var a = e.linkedEventId ? byId(e.linkedEventId) : null; return { tipo: 'desajuste', desregulacion: e.tipos || [], momento: momentOf(e), intensidad: e.intensidad || null, antes: e.antecedentes || [], senales: e.senales || [], ayudo: e.ayudo || [], durante_actividad: a ? (a.tipo || null) : null }; }
     return null;
   }
@@ -1928,6 +1989,10 @@
     $('rutinaSave').addEventListener('click', function () { toast('Guardado'); closeRutina(); });
     $('rutinaDelete').addEventListener('click', function () { if (openRutina) { removeEntry(openRutina); closeRutina(); } });
     $('rutinaBackdrop').addEventListener('click', function (ev) { if (ev.target === this) closeRutina(); });
+
+    // cierre del día (Fase 6)
+    $('dayNota').addEventListener('input', function () { setDayNota(this.value); });
+    $('dayNota').addEventListener('blur', function () { cleanDayEntry(); });
 
     // anotar por voz
     $('voiceBtn').addEventListener('click', openVoice);
