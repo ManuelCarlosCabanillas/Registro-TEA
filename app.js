@@ -1199,9 +1199,8 @@
       if (!txt) { $('micStatus').textContent = 'No se entendió el audio. Prueba de nuevo o escribe.'; return; }
       var prev = $('voiceText').value.trim();
       $('voiceText').value = prev ? (prev + ' ' + txt) : txt;
-      $('micStatus').textContent = '✓ Transcrito. Extrayendo eventos…';
-      await interpretVoice();
-      $('micStatus').textContent = 'Puedes grabar más, revisar abajo y guardar';
+      $('micStatus').textContent = '✓ Transcrito. Revisa y corrige el texto, luego pulsa ✨ Interpretar';
+      var ta = $('voiceText'); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length);
     } catch (e) {
       $('micStatus').textContent = '⚠️ ' + e.message;
     } finally { $('micBtn').disabled = false; }
