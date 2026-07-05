@@ -36,6 +36,11 @@
       <p class="hint" id="hotHint">Un toque ahora. Completas el detalle cuando esté tranquilo.</p>
       <button class="voice-btn" id="voiceBtn">🎤 Anotar por voz</button>
 
+      <section class="card" id="timelineCard" hidden>
+        <div class="card-head">📖 <span>El día en orden</span><button class="tl-toggle" id="timelineToggle" aria-expanded="false">ver</button></div>
+        <div id="timelineList" hidden></div>
+      </section>
+
       <section class="card">
         <div class="card-head">🌙 <span>Sueño</span><span class="sleep-total" id="sleepTotal"></span></div>
 
@@ -97,7 +102,13 @@
         <button class="btn-add-block" id="addDys">＋ Añadir desajuste</button>
       </section>
 
-      <p class="ver">Registro TEA · v17 · local + IA</p>
+      <section class="card">
+        <div class="card-head">📝 <span>Estado — ¿cómo está?</span></div>
+        <div id="obsList"></div>
+        <button class="btn-add-block" id="addObs">＋ Anotar cómo está</button>
+      </section>
+
+      <p class="ver">Registro TEA · v18 · local + IA</p>
     </main>
 
     <main id="view-resumen" class="view" hidden>
@@ -318,6 +329,39 @@
       <div class="sheet-foot">
         <span class="muted">Se guarda solo</span>
         <button class="btn-primary" id="perfilSave">Hecho</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: observación de estado -->
+  <div class="sheet-backdrop z-obs" id="obsBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Cómo está">
+      <div class="sheet-head">
+        <div><h2>¿Cómo está?</h2><div class="muted" id="obsTime"></div></div>
+        <button class="icon-btn" id="obsClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field-label">¿Cuándo? — hora y/o momento</div>
+        <div class="time-moment">
+          <input type="time" id="obsTimeInput" />
+          <div class="chips" id="obsMoment"></div>
+        </div>
+        <div class="field-label">¿Cómo está en general?</div>
+        <div class="chips" id="obsValencia"></div>
+        <div class="field-label">Señales <span class="muted">(varias)</span></div>
+        <div id="obsSenales"></div>
+        <div class="food-input" style="margin-top:8px">
+          <input type="text" id="obsCustomInput" placeholder="Otra señal…" autocomplete="off" />
+          <button class="btn-add" id="obsCustomAdd">Añadir</button>
+        </div>
+        <div class="field-label">Contexto <span class="muted">(dónde / con quién)</span></div>
+        <input type="text" id="obsContexto" placeholder="Opcional… ej. en el parque con niños" />
+        <div class="field-label">Nota</div>
+        <textarea id="obsNota" rows="2" placeholder="Opcional…"></textarea>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn-ghost danger" id="obsDelete">Eliminar</button>
+        <button class="btn-primary" id="obsSave">Guardar</button>
       </div>
     </div>
   </div>

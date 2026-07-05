@@ -2,7 +2,7 @@
   'use strict';
 
   var STORE_KEY = 'appTEA.v1';
-  var DATA_VERSION = 13;
+  var DATA_VERSION = 14;
 
   // ===== Config Supabase (claves públicas de cliente) =====
   var SUPABASE_URL = 'https://ntsgnvfmvlokujmddyjj.supabase.co';
@@ -50,6 +50,17 @@
   var NOCHE_EVENTOS = ['Calambres', 'Palpitaciones', 'Se despierta y vuelve', 'Se sienta', 'Mucho movimiento', 'Respiración / nariz', 'Llanto', 'Sudor', 'Otro'];
   var NAP_ACUESTO = ['Fácil', 'Difícil', 'Tumbado sin dormir'];
   var NAP_DESPERTAR = ['Solo', 'Le despierto', 'No hay manera'];
+  // ----- Observaciones de estado (Fase 2). Taxonomía del cuidador, editable (obsCustom). -----
+  var OBS_GROUPS = [
+    { g: 'Cuerpo', items: ['Puntillas', 'Desequilibrio', 'Se cae', 'Loqui / como pelota', 'No para', 'Saltos', 'Trepar / fuerza', 'Espectáculo', 'Tenso'] },
+    { g: 'Voz / habla', items: ['Gritos', 'Sube el tono', 'Habla mal', 'Habla bien', 'Habla acelerado', 'Se queda callado', 'Bloqueo'] },
+    { g: 'Energía', items: ['Cansado', 'Bostezos', 'Se tumba', 'Fatiga tranquila', 'Chupete / bibe', 'Se reactiva', 'Se dispara'] },
+    { g: 'Emoción', items: ['Lloro', 'Aguanta el lloro', 'Alegre', 'Nervioso', 'Emoción', 'Miedo / susto'] },
+    { g: 'Sensorial', items: ['Molesta ruido', 'Pide tapones', 'Molesta luz', 'Se tapa oídos'] },
+    { g: 'En positivo', items: ['Tranquilo bien', 'Alegre bien', 'TODO BIEN', 'Colabora', 'Con ganas', 'Juega solo tranquilo', 'Habla muy bien'] }
+  ];
+  function obsSenalesFlat() { var a = []; OBS_GROUPS.forEach(function (grp) { a = a.concat(grp.items); }); a = a.concat((data.child && data.child.obsCustom) || []); return a; }
+  var OBS_VALENCIA = [{ v: 'Bien', em: '🙂', cls: 'val-good' }, { v: 'Regular', em: '😐', cls: 'val-mid' }, { v: 'Difícil', em: '😣', cls: 'val-bad' }];
   var MEAL_ACCEPT = [{ v: 'Comió bien', l: '✓ Comió bien' }, { v: 'Con dificultad', l: '~ Con dificultad' }, { v: 'Lo rechazó', l: '✕ Lo rechazó' }];
 
   var ACT_TYPES = ['Juego con mamá', 'Juego con papá', 'Juego con otro adulto', 'Juego con otros niños', 'Juego solo', 'Paseo', 'Deporte', 'Parque', 'Estudio / deberes', 'Colegio', 'Terapia', 'Pantalla', 'Música', 'Lectura / cuento', 'Manualidades', 'Comida en familia', 'Baño / aseo', 'Rutina de dormir', 'Visita / familia', 'Compras', 'Otra'];
@@ -111,6 +122,18 @@
         if (e.type === 'sleep') { if (!e.eventosNoche) e.eventosNoche = []; if (!e.despertarEstado) e.despertarEstado = []; }
       });
     }
+    // v14 (Fase 2 — Observaciones): normalizar los campos de lista a arrays limpios
+    // (robusto ante importaciones/serializaciones raras). Arrays de texto → solo strings;
+    // arrays de objetos (eventosNoche, alimentos) → solo objetos.
+    if ((d.version || 0) < 14) {
+      var STR_ARR = { obs: ['senales'], sleep: ['despertarEstado', 'ayudas'], dys: ['tipos', 'antecedentes', 'senales', 'sensorial', 'ayudo'], act: ['compania', 'ambiente', 'senales', 'estrategias'] };
+      var OBJ_ARR = { sleep: ['eventosNoche'], meal: ['alimentos'] };
+      function toArr(v) { return v == null ? [] : (Array.isArray(v) ? v : (typeof v === 'object' ? [] : [v])); }
+      d.entries.forEach(function (e) {
+        var s = STR_ARR[e.type]; if (s) s.forEach(function (k) { e[k] = toArr(e[k]).filter(function (x) { return typeof x === 'string' && x; }); });
+        var o = OBJ_ARR[e.type]; if (o) o.forEach(function (k) { var v = e[k]; if (v == null) return; e[k] = (Array.isArray(v) ? v : [v]).filter(function (x) { return x && typeof x === 'object'; }); });
+      });
+    }
     d.version = DATA_VERSION;
     return d;
   }
@@ -155,7 +178,8 @@
   var selectedDate = todayKey();
   var resumenPeriod = 'dia';
   var histView = 'mes', histAnchor = todayKey(), histSelected = todayKey();
-  var openId = null, openFood = null, openMeal = null, openAct = null, openNap = null, dysFromAct = false;
+  var openId = null, openFood = null, openMeal = null, openAct = null, openNap = null, openObs = null, dysFromAct = false;
+  var timelineOpen = false;
 
   function pad(n) { return ('0' + n).slice(-2); }
   function todayKey(d) { d = d || new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
@@ -335,6 +359,14 @@
     if (!e.completo) s.push('sin completar');
     return { title: (e.tipos && e.tipos.length) ? e.tipos.join(', ') : 'Desajuste', sub: s.join(' · '), warn: !e.completo };
   }
+  function obsSummary(e) {
+    var titl = (e.senales && e.senales.length) ? e.senales.join(', ') : (e.valencia || 'Observación');
+    var s = [];
+    if (e.valencia && e.senales && e.senales.length) s.push(e.valencia.toLowerCase());
+    if (e.contexto) s.push(e.contexto);
+    if (e.nota) s.push(e.nota);
+    return { title: titl, sub: s.join(' · '), warn: e.valencia === 'Difícil' };
+  }
 
   // ---------- Anotar: navegación de día ----------
   function addDays(dateStr, n) { return todayKey(new Date(new Date(dateStr + 'T00:00:00').getTime() + n * 86400000)); }
@@ -357,6 +389,8 @@
     renderList('mealList', todayOf('meal'), mealSummary, function (e) { openMealSheet(e.id); }, 'Sin comidas registradas.');
     renderList('activityList', todayOf('act'), actSummary, function (e) { openActSheet(e.id); }, 'Sin actividades registradas.');
     renderList('dysList', todayOf('dys').filter(function (e) { return !e.linkedEventId; }), dysSummary, function (e) { openDys(e.id, false); }, 'Sin desajustes sueltos hoy.');
+    renderObs();
+    renderTimeline();
   }
 
   // ---------- nap sheet ----------
@@ -482,6 +516,53 @@
     if (wasAct && openAct) { renderActDys(); } else { renderHoy(); }
   }
 
+  // ---------- observación de estado (obs) ----------
+  function openObsSheet(id) {
+    openObs = id; var e = byId(id); if (!e.senales) e.senales = [];
+    $('obsTime').textContent = momentEm(momentOf(e)) + ' ' + (e.time || momentOf(e).toLowerCase());
+    momentPicker('obsTimeInput', 'obsMoment', e, function () { $('obsTime').textContent = momentEm(momentOf(e)) + ' ' + (e.time || momentOf(e).toLowerCase()); });
+    fill($('obsValencia'), OBS_VALENCIA.map(function (o) { return chip(o.em + ' ' + o.v, e.valencia === o.v, function () { e.valencia = (e.valencia === o.v ? null : o.v); save(); openObsSheet(id); }, o.cls); }));
+    renderObsSenales(e);
+    $('obsContexto').value = e.contexto || '';
+    $('obsNota').value = e.nota || '';
+    $('obsBackdrop').hidden = false;
+  }
+  function renderObsSenales(e) {
+    var host = $('obsSenales'); host.innerHTML = ''; if (!e.senales) e.senales = [];
+    var custom = (data.child.obsCustom || []);
+    OBS_GROUPS.concat(custom.length ? [{ g: 'Personalizadas', items: custom }] : []).forEach(function (grp) {
+      var lab = document.createElement('div'); lab.className = 'obs-grp'; lab.textContent = grp.g; host.appendChild(lab);
+      var box = document.createElement('div'); box.className = 'chips';
+      grp.items.forEach(function (v) { box.appendChild(chip(v, e.senales.indexOf(v) !== -1, function () { toggleArr(e.senales, v); save(); renderObsSenales(e); })); });
+      host.appendChild(box);
+    });
+  }
+  function addObsCustom(name) {
+    name = (name || '').trim(); if (!name) return;
+    if (!data.child.obsCustom) data.child.obsCustom = [];
+    var flatLow = obsSenalesFlat().map(function (x) { return x.toLowerCase(); });
+    if (flatLow.indexOf(name.toLowerCase()) === -1) data.child.obsCustom.push(name);
+    var e = byId(openObs); if (e) { if (!e.senales) e.senales = []; if (e.senales.indexOf(name) === -1) e.senales.push(name); }
+    save(); if (byId(openObs)) renderObsSenales(byId(openObs));
+  }
+  function obsIsEmpty(e) { return e && (!e.senales || !e.senales.length) && !e.valencia && !e.contexto && !e.nota; }
+  function closeObs() { var e = byId(openObs); if (obsIsEmpty(e)) removeEntry(openObs); $('obsBackdrop').hidden = true; openObs = null; renderHoy(); }
+  function renderObs() { renderList('obsList', todayOf('obs'), obsSummary, function (e) { openObsSheet(e.id); }, 'Sin observaciones hoy.'); }
+
+  // ---------- línea del día (timeline) ----------
+  function renderTimeline() {
+    var ents = data.entries.filter(function (e) { return e.date === selectedDate; });
+    var card = $('timelineCard');
+    if (ents.length < 2) { card.hidden = true; return; }
+    card.hidden = false;
+    $('timelineToggle').textContent = timelineOpen ? 'ocultar' : 'ver';
+    $('timelineToggle').setAttribute('aria-expanded', timelineOpen ? 'true' : 'false');
+    var list = $('timelineList'); list.hidden = !timelineOpen;
+    if (!timelineOpen) { list.innerHTML = ''; return; }
+    ents.sort(function (a, b) { return minOfDay(a) - minOfDay(b); });
+    list.innerHTML = ents.map(resItemLine).join('');
+  }
+
   // ---------- perfil ----------
   function renderPerfilSheet() {
     var perfil = data.child.perfil || (data.child.perfil = {});
@@ -506,8 +587,9 @@
     else if (e.type === 'act') { var a = actSummary(e); title = '🚶 ' + a.title; sub = a.sub; }
     else if (e.type === 'dys') { var d = dysSummary(e); title = '⚡ ' + d.title; sub = d.sub; }
     else if (e.type === 'sleep') { var p = []; var dr = durStr(e.bed, e.wake, true); if (dr) p.push(dr); if (e.calidad) p.push('calidad ' + e.calidad + '/5'); var ne = (e.eventosNoche || []).length; if (ne) p.push(ne + ' evento' + (ne > 1 ? 's' : '') + ' noche'); title = '🌙 Sueño de anoche'; sub = p.join(' · ') || 'sin datos'; }
+    else if (e.type === 'obs') { var o = obsSummary(e); title = '📝 ' + o.title; sub = o.sub; }
     var when = e.time ? e.time + ' ' : '';
-    var warn = (e.type === 'dys') || (e.type === 'act' && data.entries.some(function (x) { return x.type === 'dys' && x.linkedEventId === e.id; }));
+    var warn = (e.type === 'dys') || (e.type === 'obs' && e.valencia === 'Difícil') || (e.type === 'act' && data.entries.some(function (x) { return x.type === 'dys' && x.linkedEventId === e.id; }));
     return '<div class="res-line"><span class="k">' + when + '</span><span class="' + (warn ? 'res-warn' : '') + '">' + title + (sub ? ' · <span style="color:var(--muted)">' + sub + '</span>' : '') + '</span></div>';
   }
   function perfilCardHtml() {
@@ -526,11 +608,12 @@
     var sleep = ents.find(function (e) { return e.type === 'sleep'; });
     var tot = totalSleepMin(t);
     var sleepVal = (tot != null ? fmtDur(tot) : '—') + (sleep && sleep.calidad ? ' · ' + sleep.calidad + '/5' : '');
-    var nMeals = ents.filter(function (e) { return e.type === 'meal'; }).length, nAct = ents.filter(function (e) { return e.type === 'act'; }).length, nDys = ents.filter(function (e) { return e.type === 'dys'; }).length;
+    var nMeals = ents.filter(function (e) { return e.type === 'meal'; }).length, nAct = ents.filter(function (e) { return e.type === 'act'; }).length, nDys = ents.filter(function (e) { return e.type === 'dys'; }).length, nObs = ents.filter(function (e) { return e.type === 'obs'; }).length;
     html += '<div class="res-top">' +
       '<div class="res-stat"><div class="lbl">🌙 Sueño</div><div class="val">' + sleepVal + '</div></div>' +
       '<div class="res-stat"><div class="lbl">🍽️ Comidas</div><div class="val">' + nMeals + '</div></div>' +
       '<div class="res-stat"><div class="lbl">🚶 Actividades</div><div class="val">' + nAct + '</div></div>' +
+      '<div class="res-stat"><div class="lbl">📝 Estado</div><div class="val">' + nObs + '</div></div>' +
       '<div class="res-stat"><div class="lbl">⚡ Desajustes</div><div class="val ' + (nDys ? 'res-warn' : '') + '">' + nDys + '</div></div></div>';
     MOMENTS.forEach(function (m) {
       var evs = ents.filter(function (e) { return momentOf(e) === m.key; }).sort(function (a, b) { return (a.time || '99') < (b.time || '99') ? -1 : 1; });
@@ -699,6 +782,23 @@
       '<div class="kpi"><div class="n">' + nNights + '</div><div class="l">noches registradas</div></div>' +
       '</div>';
     if (vals.length) html += '<div class="an-h">Total de sueño — 14 días (horas)</div><div class="card-an">' + sparkVals(totals) + '</div>';
+    return html;
+  }
+  function obsAnalysisHtml() {
+    var obs = data.entries.filter(function (e) { return e.type === 'obs'; });
+    if (obs.length < 3) return '';
+    var html = '<div class="an-h">📝 Señales de estado</div>';
+    html += '<div class="card-an">' + barList(topN(countBy(obs, function (e) { return e.senales; }), 8), false) + '</div>';
+    // precursores: señales observadas el mismo día ANTES de un desajuste
+    var pre = {}, dys = data.entries.filter(function (e) { return e.type === 'dys'; });
+    dys.forEach(function (d) {
+      var dmin = minOfDay(d);
+      obs.filter(function (o) { return o.date === d.date && minOfDay(o) < dmin; }).forEach(function (o) {
+        (o.senales || []).forEach(function (s) { if (s) pre[s] = (pre[s] || 0) + 1; });
+      });
+    });
+    var preTop = topN(pre, 6);
+    if (preTop.length) html += '<div class="an-h">Señales que suelen preceder a un desajuste</div><div class="card-an">' + barList(preTop, true) + '</div>';
     return html;
   }
   function dysByDate() { var m = {}; data.entries.forEach(function (e) { if (e.type === 'dys') m[e.date] = (m[e.date] || 0) + 1; }); return m; }
@@ -943,6 +1043,9 @@
     // sueño (Fase 1)
     html += sleepAnalysisHtml();
 
+    // observaciones de estado (Fase 2)
+    html += obsAnalysisHtml();
+
     // por momento
     var byMoment = MOMENTS.map(function (m) { return { k: m.key, v: dys.filter(function (e) { return momentOf(e) === m.key; }).length }; });
     html += '<div class="an-h">Desajustes por momento del día</div><div class="card-an">' + barList(byMoment, true) + '</div>';
@@ -1158,6 +1261,7 @@
   function compactEntry(e) {
     if (e.type === 'sleep') { var tt = totalSleepMin(e.date); return { tipo: 'sueño', calidad: e.calidad || null, durmio: e.bed || null, desperto: e.wake || null, total_sueno_min: tt, se_durmio: e.facilidad || null, donde: e.donde || null, desperto_como: e.despertarComo || null, eventos_noche: (e.eventosNoche || []).map(function (x) { return x.tipo + (x.hora ? ' ' + x.hora : ''); }) }; }
     if (e.type === 'nap') return { tipo: 'siesta', momento: momentOf(e), inicio: e.start || null, fin: e.end || null, calidad: e.calidad || null, fallida: !!e.fallida };
+    if (e.type === 'obs') return { tipo: 'observacion', momento: momentOf(e), hora: e.time || null, senales: e.senales || [], valencia: e.valencia || null, contexto: e.contexto || null };
     if (e.type === 'meal') return { tipo: 'comida', nombre: e.nombre || 'comida', momento: momentOf(e), aceptacion: e.aceptacion || null, alimentos: (e.alimentos || []).map(function (f) { return f.nombre; }) };
     if (e.type === 'act') return { tipo: 'actividad', actividad: e.tipo || null, momento: momentOf(e), lugar: e.lugar || null, termino: e.termino || null, con_desajuste: actHasDys(e) };
     if (e.type === 'dys') { var a = e.linkedEventId ? byId(e.linkedEventId) : null; return { tipo: 'desajuste', desregulacion: e.tipos || [], momento: momentOf(e), intensidad: e.intensidad || null, antes: e.antecedentes || [], senales: e.senales || [], ayudo: e.ayudo || [], durante_actividad: a ? (a.tipo || null) : null }; }
@@ -1360,6 +1464,7 @@
     if (ev.type === 'meal') return '🍽️ ' + (ev.nombre || 'Comida') + (ev.aceptacion ? ' · ' + ev.aceptacion.toLowerCase() : '') + ((ev.alimentos && ev.alimentos.length) ? ' (' + ev.alimentos.join(', ') + ')' : '');
     if (ev.type === 'act') return '🚶 ' + (ev.tipo || 'Actividad') + (ev.lugar ? ' · ' + ev.lugar.toLowerCase() : '') + (ev.termino ? ' · terminó ' + ev.termino.toLowerCase() : '');
     if (ev.type === 'dys') return '⚡ ' + ((ev.tipos && ev.tipos.length) ? ev.tipos.join(', ') : 'Desajuste') + ((ev.antecedentes && ev.antecedentes.length) ? ' · tras ' + ev.antecedentes.join(', ').toLowerCase() : '');
+    if (ev.type === 'obs') return '📝 ' + ((ev.senales && ev.senales.length) ? ev.senales.join(', ') : (ev.valencia || 'Estado')) + (ev.contexto ? ' · ' + ev.contexto : '');
     if (ev.type === 'nap') return '😴 ' + (ev.fallida ? 'Siesta fallida' : 'Siesta') + (ev.start ? ' · ' + ev.start + '→' + (ev.end || '?') : '') + (ev.calidad ? ' · calidad ' + ev.calidad + '/5' : '') + (ev.nota ? ' · ' + ev.nota : '');
     if (ev.type === 'sleep') {
       var sp = [];
@@ -1401,10 +1506,11 @@
           napAcuesto: NAP_ACUESTO, napDespertar: NAP_DESPERTAR,
           calidadTexto: CALIDAD_TEXTO.map(function (o) { return o.v; }), acuestoFacil: ACUESTO_FACIL,
           dondeDormir: DONDE_DORMIR, despertarComo: DESPERTAR_COMO, despertarEstado: DESPERTAR_ESTADO,
-          nocheEventos: NOCHE_EVENTOS
+          nocheEventos: NOCHE_EVENTOS,
+          obsSenales: obsSenalesFlat(), obsValencia: OBS_VALENCIA.map(function (o) { return o.v; })
         }
       });
-      voiceEvents = (res.eventos || []).filter(function (e) { return e && ['meal', 'act', 'dys', 'nap', 'sleep'].indexOf(e.type) !== -1; });
+      voiceEvents = (res.eventos || []).filter(function (e) { return e && ['meal', 'act', 'dys', 'obs', 'nap', 'sleep'].indexOf(e.type) !== -1; });
       renderVoicePreview();
     } catch (e) {
       $('voicePreview').innerHTML = '<div class="note-box err">⚠️ ' + esc(e.message) + '</div>';
@@ -1448,6 +1554,7 @@
     if (ev.type === 'meal') { base.nombre = ev.nombre || 'Comida'; base.alimentos = (ev.alimentos || []).map(function (nm) { return { nombre: String(nm) }; }); if (ev.aceptacion) base.aceptacion = snapOne(ev.aceptacion, MEAL_ACCEPT.map(function (m) { return m.v; })); }
     else if (ev.type === 'act') { base.tipo = ev.tipo ? snapOne(ev.tipo, ACT_TYPES) : 'Otra'; if (ev.lugar) base.lugar = snapOne(ev.lugar, ACT_LUGAR); if (ev.termino) base.termino = snapOne(ev.termino, ACT_TERMINO); base.compania = []; base.ambiente = []; base.senales = []; base.estrategias = []; }
     else if (ev.type === 'dys') { base.tipos = snapArr(ev.tipos, DYS.tipos); base.antecedentes = snapArr(ev.antecedentes, DYS.antecedentes); base.senales = snapArr(ev.senales, DYS.senales); base.sensorial = snapArr(ev.sensorial, DYS.sensorial); base.ayudo = snapArr(ev.ayudo, DYS.ayudo); if (ev.intensidad) base.intensidad = +ev.intensidad; base.completo = true; }
+    else if (ev.type === 'obs') { base.senales = snapArr(ev.senales, obsSenalesFlat()); if (ev.valencia) base.valencia = snapOne(ev.valencia, OBS_VALENCIA.map(function (o) { return o.v; })); if (ev.contexto) base.contexto = String(ev.contexto); }
     else if (ev.type === 'nap') {
       if (ev.start) base.start = ev.start; if (ev.end) base.end = ev.end; if (ev.calidad) base.calidad = +ev.calidad;
       if (ev.acuesto) base.acuesto = snapOne(ev.acuesto, NAP_ACUESTO);
@@ -1484,6 +1591,19 @@
     $('addNap').addEventListener('click', function () { var e = addEntry('nap', { moment: 'Tarde' }); openNapSheet(e.id); });
     $('addMeal').addEventListener('click', function () { var e = addEntry('meal', { nombre: '', alimentos: [] }); openMealSheet(e.id); });
     $('addActivity').addEventListener('click', function () { var e = addEntry('act', { compania: [], ambiente: [], senales: [], estrategias: [] }); openActSheet(e.id); });
+    $('addObs').addEventListener('click', function () { var e = addEntry('obs', { time: nowTime(), moment: nowMoment(), senales: [] }); openObsSheet(e.id); });
+
+    // observación de estado (obs)
+    $('obsTimeInput').addEventListener('change', function () { var e = byId(openObs); if (e) { e.time = this.value; if (this.value) e.moment = momentFromTime(this.value); save(); momentPicker('obsTimeInput', 'obsMoment', e); $('obsTime').textContent = momentEm(momentOf(e)) + ' ' + (e.time || momentOf(e).toLowerCase()); } });
+    $('obsContexto').addEventListener('input', function () { var e = byId(openObs); if (e) { e.contexto = this.value; save(); } });
+    $('obsNota').addEventListener('input', function () { var e = byId(openObs); if (e) { e.nota = this.value; save(); } });
+    $('obsCustomAdd').addEventListener('click', function () { addObsCustom($('obsCustomInput').value); $('obsCustomInput').value = ''; $('obsCustomInput').focus(); });
+    $('obsCustomInput').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); addObsCustom(this.value); this.value = ''; } });
+    $('obsClose').addEventListener('click', closeObs);
+    $('obsSave').addEventListener('click', function () { toast('Guardado'); closeObs(); });
+    $('obsDelete').addEventListener('click', function () { if (openObs) { removeEntry(openObs); closeObs(); } });
+    $('obsBackdrop').addEventListener('click', function (ev) { if (ev.target === this) closeObs(); });
+    $('timelineToggle').addEventListener('click', function () { timelineOpen = !timelineOpen; renderTimeline(); });
 
     // anotar por voz
     $('voiceBtn').addEventListener('click', openVoice);

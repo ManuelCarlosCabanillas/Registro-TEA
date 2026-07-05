@@ -189,6 +189,7 @@ body {
 .z-dys { z-index: 24; }
 .z-food { z-index: 26; }
 .z-voice { z-index: 28; }
+.z-obs { z-index: 25; }
 
 .res-moment-head { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600; margin: 16px 0 8px; color: var(--sc); }
 .res-moment-head .em { font-size: 18px; }
@@ -467,3 +468,12 @@ body {
 .noche-ev .ne-time { border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; font-size: 13px; font-family: inherit; color: var(--ink); background: var(--surface); }
 .noche-ev .ne-time:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-tint); }
 .noche-ev .ne-x { border: none; background: none; color: var(--muted); font-size: 15px; cursor: pointer; padding: 2px 4px; flex-shrink: 0; }
+
+/* ===== Observaciones + timeline (Fase 2) ===== */
+.obs-grp { font-size: 10.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 12px 0 5px; }
+.obs-grp:first-child { margin-top: 4px; }
+.chip.val-good.sel { background: #E8F3DC; border-color: #7BA84E; color: #3B6D11; }
+.chip.val-mid.sel { background: #FAEEDA; border-color: #E0A44A; color: #854F0B; }
+.chip.val-bad.sel { background: var(--danger-tint); border-color: var(--danger); color: var(--danger); }
+.tl-toggle { margin-left: auto; border: 1px solid var(--line); background: var(--surface-2); border-radius: 999px; padding: 3px 12px; font-size: 12px; font-weight: 600; color: var(--accent-dark); cursor: pointer; font-family: inherit; }
+#timelineList { margin-top: 4px; }
