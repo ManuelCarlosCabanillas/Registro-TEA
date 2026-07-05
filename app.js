@@ -771,6 +771,8 @@
     var html = '<div class="demo-bar"><button class="btn-ghost" id="genDemo">Generar 14 días de ejemplo</button><button class="btn-ghost danger" id="clrAll">Borrar todo</button></div>';
     html += '<p class="an-lead">Datos sobre <b>' + nDays + '</b> día(s) · <b>' + dys.length + '</b> desajustes en total.</p>';
 
+    html += aiSectionHtml();
+
     if (dys.length < 3) {
       html += '<div class="note-box">Aún hay pocos datos para analizar. Pulsa <b>“Generar 14 días de ejemplo”</b> para ver cómo funcionaría con datos reales de varias semanas.</div>';
       wrap.innerHTML = html; wireAnalisisBtns(); return;
@@ -834,6 +836,7 @@
   function wireAnalisisBtns() {
     var g = $('genDemo'); if (g) g.addEventListener('click', function () { genDemo(); });
     var c = $('clrAll'); if (c) c.addEventListener('click', function () { if (confirm('¿Borrar TODOS los registros?')) { data.entries = []; save(); renderAnalisis(); } });
+    wireAISection();
   }
 
   // ---------- generador de datos de ejemplo ----------
@@ -983,6 +986,244 @@
     }
   };
 
+  // ===================== IA (voz, análisis, chat) =====================
+  var AI_ENDPOINT = '/.netlify/functions/ai';
+
+  async function aiCall(task, payload) {
+    var body = Object.assign({ task: task }, payload || {});
+    var r;
+    try {
+      r = await fetch(AI_ENDPOINT, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    } catch (e) {
+      throw new Error('No pude conectar con la IA. ¿La app está en Netlify y con conexión?');
+    }
+    var j = null; try { j = await r.json(); } catch (e) {}
+    if (!r.ok || !j || !j.ok) {
+      var msg = (j && j.error) ? j.error : ('Error ' + r.status + '. ¿Está configurada la clave de Claude en Netlify?');
+      throw new Error(msg);
+    }
+    return j;
+  }
+
+  // ---- Resumen compacto de datos para análisis / chat ----
+  function compactEntry(e) {
+    if (e.type === 'sleep') return { tipo: 'sueño', calidad: e.calidad || null, acostado: e.bed || null, despertado: e.wake || null };
+    if (e.type === 'meal') return { tipo: 'comida', nombre: e.nombre || 'comida', momento: momentOf(e), aceptacion: e.aceptacion || null, alimentos: (e.alimentos || []).map(function (f) { return f.nombre; }) };
+    if (e.type === 'act') return { tipo: 'actividad', actividad: e.tipo || null, momento: momentOf(e), lugar: e.lugar || null, termino: e.termino || null, con_desajuste: actHasDys(e) };
+    if (e.type === 'dys') { var a = e.linkedEventId ? byId(e.linkedEventId) : null; return { tipo: 'desajuste', desregulacion: e.tipos || [], momento: momentOf(e), intensidad: e.intensidad || null, antes: e.antecedentes || [], senales: e.senales || [], ayudo: e.ayudo || [], durante_actividad: a ? (a.tipo || null) : null }; }
+    return null;
+  }
+  function buildAISummary() {
+    var dys = data.entries.filter(function (e) { return e.type === 'dys'; });
+    var acts = data.entries.filter(function (e) { return e.type === 'act'; });
+    var dates = Object.keys(data.entries.reduce(function (m, e) { m[e.date] = 1; return m; }, {})).sort();
+    var nDays = dates.length;
+    var byMoment = {}; MOMENTS.forEach(function (m) { byMoment[m.key] = dys.filter(function (e) { return momentOf(e) === m.key; }).length; });
+    var byAct = {}; dys.forEach(function (e) { if (e.linkedEventId) { var a = byId(e.linkedEventId); if (a && a.tipo) byAct[a.tipo] = (byAct[a.tipo] || 0) + 1; } });
+    var reg = runRegression();
+    var recientes = dates.slice(-10).map(function (dt) {
+      var ents = data.entries.filter(function (e) { return e.date === dt; });
+      return { fecha: dt, eventos: ents.map(compactEntry).filter(Boolean) };
+    });
+    return {
+      nino: data.child.name,
+      perfil_sensorial: data.child.perfil || {},
+      dias_registrados: nDays,
+      total_desajustes: dys.length,
+      total_actividades: acts.length,
+      desajustes_por_dia: nDays ? +(dys.length / nDays).toFixed(2) : 0,
+      desajustes_por_momento: byMoment,
+      disparadores_top: topN(countBy(dys, function (e) { return e.antecedentes; }), 8),
+      que_ayuda_top: topN(countBy(dys, function (e) { return e.ayudo; }), 8),
+      senales_top: topN(countBy(dys, function (e) { return e.senales; }), 8),
+      tipos_desajuste_top: topN(countBy(dys, function (e) { return e.tipos; }), 8),
+      desajustes_por_actividad: topN(byAct, 8),
+      efecto_sueno: sleepEffect(),
+      factores_regresion: reg.ok ? reg.factors.slice(0, 8).map(function (f) { return { factor: f.name, peso: +f.w.toFixed(2) }; }) : null,
+      dias_recientes: recientes
+    };
+  }
+
+  // ---- Markdown ligero (negritas, encabezados, listas) ----
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function mdLite(text) {
+    var lines = String(text || '').split(/\n/), out = [], inUl = false;
+    function closeUl() { if (inUl) { out.push('</ul>'); inUl = false; } }
+    lines.forEach(function (ln) {
+      var t = ln.trim();
+      if (!t) { closeUl(); return; }
+      var h = t.match(/^#{1,6}\s+(.*)$/);
+      if (h) { closeUl(); out.push('<h4>' + inline(h[1]) + '</h4>'); return; }
+      var li = t.match(/^[-*]\s+(.*)$/);
+      if (li) { if (!inUl) { out.push('<ul>'); inUl = true; } out.push('<li>' + inline(li[1]) + '</li>'); return; }
+      closeUl(); out.push('<p>' + inline(t) + '</p>');
+    });
+    closeUl();
+    return out.join('');
+    function inline(s) { return esc(s).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>'); }
+  }
+
+  // ---- Estado persistente del panel de IA en Análisis ----
+  var aiAnalyzeOut = '';       // HTML del último análisis
+  var aiAnalyzeBusy = false;
+  var aiChatLog = [];          // {role:'user'|'assistant', text}
+  var aiChatBusy = false;
+
+  function aiSectionHtml() {
+    var chat = aiChatLog.map(function (m) {
+      return '<div class="chat-msg ' + m.role + '">' + (m.role === 'assistant' ? mdLite(m.text) : esc(m.text)) + '</div>';
+    }).join('') || '<div class="chat-empty">Pregunta sobre patrones, sueño, disparadores… Responde solo con tus datos.</div>';
+    return '' +
+      '<div class="ai-card">' +
+        '<div class="an-h" style="margin-top:0">🧠 Análisis con IA</div>' +
+        '<button class="btn-primary btn-block" id="aiAnalyzeBtn"' + (aiAnalyzeBusy ? ' disabled' : '') + '>' + (aiAnalyzeBusy ? 'Analizando…' : '✨ Generar conclusiones (Sonnet)') + '</button>' +
+        '<div id="aiAnalyzeOut" class="ai-out">' + (aiAnalyzeOut || '') + '</div>' +
+      '</div>' +
+      '<div class="ai-card">' +
+        '<div class="an-h" style="margin-top:0">💬 Pregunta a tus datos</div>' +
+        '<div class="chat-log" id="aiChatLog">' + chat + '</div>' +
+        '<div class="chat-input"><input type="text" id="aiChatInput" placeholder="¿Qué dispara más los desajustes?" ' + (aiChatBusy ? 'disabled' : '') + ' /><button class="chat-send" id="aiChatSend"' + (aiChatBusy ? ' disabled' : '') + '>➤</button></div>' +
+      '</div>' +
+      '<p class="hint2" style="margin:2px 2px 14px">La IA analiza tus datos en un servidor seguro (API de Claude). Orientativo — no sustituye a un profesional.</p>';
+  }
+  function wireAISection() {
+    var ab = $('aiAnalyzeBtn'); if (ab) ab.addEventListener('click', runAIAnalyze);
+    var ci = $('aiChatInput'), cs = $('aiChatSend');
+    if (cs) cs.addEventListener('click', sendChat);
+    if (ci) ci.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); sendChat(); } });
+    var log = $('aiChatLog'); if (log) log.scrollTop = log.scrollHeight;
+  }
+  async function runAIAnalyze() {
+    if (aiAnalyzeBusy) return;
+    if (data.entries.length < 3) { aiAnalyzeOut = '<div class="note-box">Aún hay muy pocos datos. Registra algún día (o genera datos de ejemplo) y vuelve a intentarlo.</div>'; renderAnalisis(); return; }
+    aiAnalyzeBusy = true; aiAnalyzeOut = '<div class="ai-loading">Pensando con los datos…</div>'; renderAnalisis();
+    try {
+      var res = await aiCall('analyze', { summary: buildAISummary() });
+      aiAnalyzeOut = '<div class="ai-answer">' + mdLite(res.text) + '</div>';
+    } catch (e) {
+      aiAnalyzeOut = '<div class="note-box err">⚠️ ' + esc(e.message) + '</div>';
+    }
+    aiAnalyzeBusy = false; renderAnalisis();
+  }
+  async function sendChat() {
+    if (aiChatBusy) return;
+    var inp = $('aiChatInput'); var q = inp ? inp.value.trim() : '';
+    if (!q) return;
+    aiChatLog.push({ role: 'user', text: q });
+    aiChatBusy = true; renderAnalisis();
+    try {
+      var hist = aiChatLog.slice(0, -1).map(function (m) { return { role: m.role, content: m.text }; });
+      var res = await aiCall('chat', { question: q, summary: buildAISummary(), history: hist });
+      aiChatLog.push({ role: 'assistant', text: res.text });
+    } catch (e) {
+      aiChatLog.push({ role: 'assistant', text: '⚠️ ' + e.message });
+    }
+    aiChatBusy = false; renderAnalisis();
+  }
+
+  // ---- Anotar por voz ----
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var rec = null, recording = false, voiceBase = '', voiceFinal = '', voiceEvents = [];
+
+  function openVoice() {
+    voiceEvents = []; voiceBase = ''; voiceFinal = '';
+    $('voiceText').value = '';
+    $('voicePreview').innerHTML = '';
+    $('voiceSave').disabled = true;
+    $('voiceDate').textContent = (selectedDate === todayKey() ? 'Para hoy' : 'Para el ' + new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }));
+    if (!SR) { $('micBtn').disabled = true; $('micStatus').textContent = 'Tu navegador no soporta dictado. Escribe abajo 👇'; }
+    else { $('micBtn').disabled = false; $('micStatus').textContent = 'Toca el micro y habla'; }
+    setMic(false);
+    $('voiceBackdrop').hidden = false;
+  }
+  function closeVoice() { stopRec(); $('voiceBackdrop').hidden = true; }
+  function setMic(on) { var b = $('micBtn'); if (!b) return; b.classList.toggle('rec', on); $('micStatus').textContent = on ? '● Escuchando… toca para parar' : (SR ? 'Toca el micro y habla' : 'Escribe abajo 👇'); }
+  function startRec() {
+    if (!SR || recording) return;
+    try { rec = new SR(); } catch (e) { return; }
+    rec.lang = 'es-ES'; rec.interimResults = true; rec.continuous = true;
+    voiceBase = $('voiceText').value ? $('voiceText').value + ' ' : ''; voiceFinal = '';
+    rec.onresult = function (e) {
+      var interim = '';
+      for (var i = e.resultIndex; i < e.results.length; i++) {
+        var tr = e.results[i][0].transcript;
+        if (e.results[i].isFinal) voiceFinal += tr + ' '; else interim += tr;
+      }
+      $('voiceText').value = (voiceBase + voiceFinal + interim).replace(/\s+/g, ' ').trimStart();
+    };
+    rec.onerror = function (ev) { setMic(false); recording = false; if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') $('micStatus').textContent = 'Permiso de micro denegado. Escribe abajo 👇'; };
+    rec.onend = function () { recording = false; setMic(false); };
+    try { rec.start(); recording = true; setMic(true); } catch (e) {}
+  }
+  function stopRec() { if (rec && recording) { try { rec.stop(); } catch (e) {} } recording = false; setMic(false); }
+  function toggleRec() { if (recording) stopRec(); else startRec(); }
+
+  function voiceLabel(ev) {
+    if (ev.type === 'meal') return '🍽️ ' + (ev.nombre || 'Comida') + (ev.aceptacion ? ' · ' + ev.aceptacion.toLowerCase() : '') + ((ev.alimentos && ev.alimentos.length) ? ' (' + ev.alimentos.join(', ') + ')' : '');
+    if (ev.type === 'act') return '🚶 ' + (ev.tipo || 'Actividad') + (ev.lugar ? ' · ' + ev.lugar.toLowerCase() : '') + (ev.termino ? ' · terminó ' + ev.termino.toLowerCase() : '');
+    if (ev.type === 'dys') return '⚡ ' + ((ev.tipos && ev.tipos.length) ? ev.tipos.join(', ') : 'Desajuste') + ((ev.antecedentes && ev.antecedentes.length) ? ' · tras ' + ev.antecedentes.join(', ').toLowerCase() : '');
+    if (ev.type === 'sleep') return '🌙 Sueño' + (ev.calidad ? ' · calidad ' + ev.calidad + '/5' : '') + (ev.bed ? ' · ' + ev.bed + '→' + (ev.wake || '?') : '');
+    return ev.type;
+  }
+  function renderVoicePreview() {
+    var el = $('voicePreview');
+    if (!voiceEvents.length) { el.innerHTML = '<div class="note-box">No detecté eventos claros. Prueba a dar más detalle o escríbelo a mano.</div>'; $('voiceSave').disabled = true; return; }
+    var html = '<div class="field-label" style="margin-top:14px">Eventos detectados — revisa y confirma</div>';
+    html += voiceEvents.map(function (ev, i) {
+      var mo = ev.moment ? momentEm(ev.moment) + ' ' + ev.moment : '';
+      return '<label class="vp-row"><input type="checkbox" data-i="' + i + '" checked /><span class="vp-body"><span class="vp-t">' + esc(voiceLabel(ev)) + '</span>' + (mo ? '<span class="vp-m">' + mo + (ev.time ? ' · ' + ev.time : '') + '</span>' : '') + '</span></label>';
+    }).join('');
+    el.innerHTML = html;
+    $('voiceSave').disabled = false;
+  }
+  async function interpretVoice() {
+    var txt = $('voiceText').value.trim();
+    if (!txt) { toast('Escribe o dicta algo primero'); return; }
+    stopRec();
+    var btn = $('voiceInterpret'); btn.disabled = true; var prev = btn.textContent; btn.textContent = 'Interpretando…';
+    $('voicePreview').innerHTML = '<div class="ai-loading">La IA está leyendo lo que contaste…</div>';
+    try {
+      var res = await aiCall('parse', {
+        transcript: txt,
+        moment: nowMoment(),
+        today: selectedDate,
+        vocab: {
+          mealAcept: MEAL_ACCEPT.map(function (m) { return m.v; }),
+          actTypes: ACT_TYPES, actTermino: ACT_TERMINO,
+          dysTipos: DYS.tipos, dysAnt: DYS.antecedentes, dysSenales: DYS.senales, dysAyudo: DYS.ayudo
+        }
+      });
+      voiceEvents = (res.eventos || []).filter(function (e) { return e && ['meal', 'act', 'dys', 'sleep'].indexOf(e.type) !== -1; });
+      renderVoicePreview();
+    } catch (e) {
+      $('voicePreview').innerHTML = '<div class="note-box err">⚠️ ' + esc(e.message) + '</div>';
+      $('voiceSave').disabled = true;
+    }
+    btn.disabled = false; btn.textContent = prev;
+  }
+  function saveVoiceEvents() {
+    var checks = $('voicePreview').querySelectorAll('input[type=checkbox]');
+    var n = 0;
+    checks.forEach(function (c) {
+      if (!c.checked) return;
+      var ev = voiceEvents[+c.dataset.i]; if (!ev) return;
+      addEntry(ev.type, mapVoiceEvent(ev)); n++;
+    });
+    if (!n) { toast('Marca al menos un evento'); return; }
+    save(); closeVoice(); renderHoy();
+    toast(n === 1 ? '1 evento guardado' : n + ' eventos guardados');
+  }
+  function mapVoiceEvent(ev) {
+    var base = { time: ev.time || '', moment: ev.moment || momentFromTime(ev.time) || nowMoment() };
+    if (ev.nota) base.nota = ev.nota;
+    if (ev.type === 'meal') { base.nombre = ev.nombre || 'Comida'; base.alimentos = (ev.alimentos || []).map(function (nm) { return { nombre: String(nm) }; }); if (ev.aceptacion) base.aceptacion = ev.aceptacion; }
+    else if (ev.type === 'act') { base.tipo = ev.tipo || 'Otra'; if (ev.lugar) base.lugar = ev.lugar; if (ev.termino) base.termino = ev.termino; base.compania = []; base.ambiente = []; base.senales = []; base.estrategias = []; }
+    else if (ev.type === 'dys') { base.tipos = arr(ev.tipos); base.antecedentes = arr(ev.antecedentes); base.senales = arr(ev.senales); base.sensorial = arr(ev.sensorial); base.ayudo = arr(ev.ayudo); if (ev.intensidad) base.intensidad = +ev.intensidad; base.completo = true; }
+    else if (ev.type === 'sleep') { if (ev.bed) base.bed = ev.bed; if (ev.wake) base.wake = ev.wake; if (ev.calidad) base.calidad = +ev.calidad; base.moment = 'Noche'; base.ayudas = []; }
+    return base;
+    function arr(x) { return Array.isArray(x) ? x.map(String) : (x ? [String(x)] : []); }
+  }
+
   function init() {
     renderHeader(); renderBank(); renderHoy();
 
@@ -995,6 +1236,15 @@
     $('addNap').addEventListener('click', function () { var e = addEntry('nap', { moment: 'Tarde' }); openNapSheet(e.id); });
     $('addMeal').addEventListener('click', function () { var e = addEntry('meal', { nombre: '', alimentos: [] }); openMealSheet(e.id); });
     $('addActivity').addEventListener('click', function () { var e = addEntry('act', { compania: [], ambiente: [], senales: [], estrategias: [] }); openActSheet(e.id); });
+
+    // anotar por voz
+    $('voiceBtn').addEventListener('click', openVoice);
+    $('micBtn').addEventListener('click', toggleRec);
+    $('voiceInterpret').addEventListener('click', interpretVoice);
+    $('voiceSave').addEventListener('click', saveVoiceEvents);
+    $('voiceClose').addEventListener('click', closeVoice);
+    $('voiceCancel').addEventListener('click', closeVoice);
+    $('voiceBackdrop').addEventListener('click', function (ev) { if (ev.target === this) closeVoice(); });
 
     document.querySelectorAll('.more-toggle').forEach(function (btn) {
       btn.addEventListener('click', function () { var el = $(btn.dataset.target); var open = !el.hidden; el.hidden = open; btn.textContent = (open ? '＋ más detalle' : '－ menos detalle'); });

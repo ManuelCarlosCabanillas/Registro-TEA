@@ -34,6 +34,7 @@
       <div id="anotarAlert" class="anotar-alert" hidden></div>
       <button class="hot-btn" id="hotBtn">⚡ Registrar desajuste ahora</button>
       <p class="hint" id="hotHint">Un toque ahora. Completas el detalle cuando esté tranquilo.</p>
+      <button class="voice-btn" id="voiceBtn">🎤 Anotar por voz</button>
 
       <section class="card">
         <div class="card-head">🌙 <span>Sueño</span></div>
@@ -77,7 +78,7 @@
         <button class="btn-add-block" id="addDys">＋ Añadir desajuste</button>
       </section>
 
-      <p class="ver">Registro TEA · v12 · local</p>
+      <p class="ver">Registro TEA · v13 · local + IA</p>
     </main>
 
     <main id="view-resumen" class="view" hidden>
@@ -291,6 +292,31 @@
       <div class="sheet-foot">
         <span class="muted">Se guarda solo</span>
         <button class="btn-primary" id="perfilSave">Hecho</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: anotar por voz -->
+  <div class="sheet-backdrop z-voice" id="voiceBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Anotar por voz">
+      <div class="sheet-head">
+        <div><h2>Anotar por voz</h2><div class="muted" id="voiceDate"></div></div>
+        <button class="icon-btn" id="voiceClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body">
+        <p class="hint2" style="margin-top:0">Cuenta cómo ha ido (o parte del día). La IA lo convertirá en eventos y tú confirmas antes de guardar.</p>
+        <div class="mic-wrap">
+          <button class="mic-big" id="micBtn" aria-label="Grabar voz"><span class="mic-ico">🎤</span></button>
+          <div class="mic-status" id="micStatus">Toca el micro y habla</div>
+        </div>
+        <div class="field-label">Texto</div>
+        <textarea id="voiceText" rows="4" placeholder="…o escribe aquí directamente. Ej: “Esta mañana en el parque se tapó los oídos y acabó llorando; le ayudó un abrazo. Comió bien en el desayuno.”"></textarea>
+        <button class="btn-primary btn-block" id="voiceInterpret">✨ Interpretar con IA</button>
+        <div id="voicePreview"></div>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn-ghost" id="voiceCancel">Cancelar</button>
+        <button class="btn-primary" id="voiceSave" disabled>Guardar seleccionados</button>
       </div>
     </div>
   </div>

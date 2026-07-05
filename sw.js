@@ -1,4 +1,4 @@
-var CACHE = 'tea-v4';
+var CACHE = 'tea-v5';
 var ASSETS = ['./', './index.html', './styles.css', './app.js', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', function (e) {
@@ -16,6 +16,7 @@ self.addEventListener('activate', function (e) {
 // Red primero: siempre intenta traer la última versión; usa la caché solo sin conexión.
 self.addEventListener('fetch', function (e) {
   if (e.request.method !== 'GET') return;
+  if (e.request.url.indexOf('/.netlify/') !== -1) return; // no cachear la función de IA
   e.respondWith(
     fetch(e.request).then(function (res) {
       var copy = res.clone();
