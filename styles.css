@@ -477,3 +477,8 @@ body {
 .chip.val-bad.sel { background: var(--danger-tint); border-color: var(--danger); color: var(--danger); }
 .tl-toggle { margin-left: auto; border: 1px solid var(--line); background: var(--surface-2); border-radius: 999px; padding: 3px 12px; font-size: 12px; font-weight: 600; color: var(--accent-dark); cursor: pointer; font-family: inherit; }
 #timelineList { margin-top: 4px; }
+
+/* ===== Cuerpo y salud (Fase 3) ===== */
+.quick-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.quick-btn { border: 1px solid var(--line); background: var(--surface-2); border-radius: 999px; padding: 9px 15px; font-size: 14px; font-weight: 600; color: var(--ink); cursor: pointer; font-family: inherit; }
+.quick-btn:active { transform: scale(0.97); background: var(--accent-tint); border-color: var(--accent); }

@@ -108,7 +108,18 @@
         <button class="btn-add-block" id="addObs">＋ Anotar cómo está</button>
       </section>
 
-      <p class="ver">Registro TEA · v18 · local + IA</p>
+      <section class="card">
+        <div class="card-head">🩺 <span>Cuerpo y salud</span></div>
+        <div class="quick-row">
+          <button class="quick-btn" id="qPopo">💩 POPO</button>
+          <button class="quick-btn" id="qCalambre">⚡ Calambre</button>
+          <button class="quick-btn" id="qMedic">💊 Medicación</button>
+          <button class="quick-btn" id="qOtroSalud">➕ Otro</button>
+        </div>
+        <div id="saludList"></div>
+      </section>
+
+      <p class="ver">Registro TEA · v19 · local + IA</p>
     </main>
 
     <main id="view-resumen" class="view" hidden>
@@ -362,6 +373,36 @@
       <div class="sheet-foot">
         <button class="btn-ghost danger" id="obsDelete">Eliminar</button>
         <button class="btn-primary" id="obsSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: cuerpo y salud -->
+  <div class="sheet-backdrop z-obs" id="saludBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Cuerpo y salud">
+      <div class="sheet-head">
+        <div><h2>Cuerpo y salud</h2><div class="muted" id="saludTime"></div></div>
+        <button class="icon-btn" id="saludClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field-label">Tipo</div>
+        <div class="chips" id="saludTipo"></div>
+        <div class="field-label">¿Cuándo? — hora y/o momento</div>
+        <div class="time-moment">
+          <input type="time" id="saludTimeInput" />
+          <div class="chips" id="saludMoment"></div>
+        </div>
+        <div id="saludDetalleWrap" hidden>
+          <div class="field-label" id="saludDetalleLabel">Detalle</div>
+          <div class="chips" id="saludDetalle"></div>
+          <input type="text" id="saludDetalleText" placeholder="Nombre / dosis…" hidden />
+        </div>
+        <div class="field-label">Nota</div>
+        <textarea id="saludNota" rows="2" placeholder="Opcional…"></textarea>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn-ghost danger" id="saludDelete">Eliminar</button>
+        <button class="btn-primary" id="saludSave">Guardar</button>
       </div>
     </div>
   </div>

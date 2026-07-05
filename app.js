@@ -61,6 +61,14 @@
   ];
   function obsSenalesFlat() { var a = []; OBS_GROUPS.forEach(function (grp) { a = a.concat(grp.items); }); a = a.concat((data.child && data.child.obsCustom) || []); return a; }
   var OBS_VALENCIA = [{ v: 'Bien', em: '🙂', cls: 'val-good' }, { v: 'Regular', em: '😐', cls: 'val-mid' }, { v: 'Difícil', em: '😣', cls: 'val-bad' }];
+  // ----- Cuerpo y salud (Fase 3) -----
+  var SALUD_SUBTIPOS = [
+    { k: 'Deposición', em: '💩' }, { k: 'Pipí', em: '💧' }, { k: 'Calambres', em: '⚡' },
+    { k: 'Palpitaciones', em: '💓' }, { k: 'Dolor', em: '🤕' }, { k: 'Mocos / enfermedad', em: '🤧' },
+    { k: 'Medicación', em: '💊' }, { k: 'Otro', em: '➕' }
+  ];
+  var DEPOSICION_DETALLE = ['Normal', 'Dura', 'Blanda', 'Diarrea'];
+  function saludEm(sub) { var f = SALUD_SUBTIPOS.find(function (x) { return x.k === sub; }); return f ? f.em : '🩺'; }
   var MEAL_ACCEPT = [{ v: 'Comió bien', l: '✓ Comió bien' }, { v: 'Con dificultad', l: '~ Con dificultad' }, { v: 'Lo rechazó', l: '✕ Lo rechazó' }];
 
   var ACT_TYPES = ['Juego con mamá', 'Juego con papá', 'Juego con otro adulto', 'Juego con otros niños', 'Juego solo', 'Paseo', 'Deporte', 'Parque', 'Estudio / deberes', 'Colegio', 'Terapia', 'Pantalla', 'Música', 'Lectura / cuento', 'Manualidades', 'Comida en familia', 'Baño / aseo', 'Rutina de dormir', 'Visita / familia', 'Compras', 'Otra'];
@@ -178,7 +186,7 @@
   var selectedDate = todayKey();
   var resumenPeriod = 'dia';
   var histView = 'mes', histAnchor = todayKey(), histSelected = todayKey();
-  var openId = null, openFood = null, openMeal = null, openAct = null, openNap = null, openObs = null, dysFromAct = false;
+  var openId = null, openFood = null, openMeal = null, openAct = null, openNap = null, openObs = null, openSalud = null, dysFromAct = false;
   var timelineOpen = false;
 
   function pad(n) { return ('0' + n).slice(-2); }
@@ -367,6 +375,12 @@
     if (e.nota) s.push(e.nota);
     return { title: titl, sub: s.join(' · '), warn: e.valencia === 'Difícil' };
   }
+  function saludSummary(e) {
+    var s = [];
+    if (e.detalle) s.push(e.detalle.toLowerCase());
+    if (e.nota) s.push(e.nota);
+    return { title: saludEm(e.subtipo) + ' ' + (e.subtipo || 'Salud'), sub: s.join(' · '), warn: ['Calambres', 'Palpitaciones', 'Dolor'].indexOf(e.subtipo) !== -1 };
+  }
 
   // ---------- Anotar: navegación de día ----------
   function addDays(dateStr, n) { return todayKey(new Date(new Date(dateStr + 'T00:00:00').getTime() + n * 86400000)); }
@@ -390,6 +404,7 @@
     renderList('activityList', todayOf('act'), actSummary, function (e) { openActSheet(e.id); }, 'Sin actividades registradas.');
     renderList('dysList', todayOf('dys').filter(function (e) { return !e.linkedEventId; }), dysSummary, function (e) { openDys(e.id, false); }, 'Sin desajustes sueltos hoy.');
     renderObs();
+    renderSalud();
     renderTimeline();
   }
 
@@ -563,6 +578,33 @@
     list.innerHTML = ents.map(resItemLine).join('');
   }
 
+  // ---------- cuerpo y salud (Fase 3) ----------
+  function quickSalud(subtipo) {
+    var e = addEntry('salud', { subtipo: subtipo, time: nowTime(), moment: nowMoment() });
+    save(); renderHoy(); toast(saludEm(subtipo) + ' ' + subtipo + ' · ' + e.time);
+  }
+  function renderSalud() { renderList('saludList', todayOf('salud'), saludSummary, function (e) { openSaludSheet(e.id); }, 'Sin registros de salud hoy.'); }
+  function openSaludSheet(id) {
+    openSalud = id; var e = byId(id);
+    $('saludTime').textContent = momentEm(momentOf(e)) + ' ' + (e.time || momentOf(e).toLowerCase());
+    fill($('saludTipo'), SALUD_SUBTIPOS.map(function (o) { return chip(o.em + ' ' + o.k, e.subtipo === o.k, function () { e.subtipo = o.k; e.detalle = null; save(); openSaludSheet(id); }); }));
+    momentPicker('saludTimeInput', 'saludMoment', e, function () { $('saludTime').textContent = momentEm(momentOf(e)) + ' ' + (e.time || momentOf(e).toLowerCase()); });
+    renderSaludDetalle(e);
+    $('saludNota').value = e.nota || '';
+    $('saludBackdrop').hidden = false;
+  }
+  function renderSaludDetalle(e) {
+    var wrap = $('saludDetalleWrap'), chipsEl = $('saludDetalle'), textEl = $('saludDetalleText');
+    if (e.subtipo === 'Deposición') {
+      wrap.hidden = false; $('saludDetalleLabel').textContent = '¿Cómo fue?'; textEl.hidden = true;
+      fill(chipsEl, DEPOSICION_DETALLE.map(function (v) { return chip(v, e.detalle === v, function () { e.detalle = (e.detalle === v ? null : v); save(); renderSaludDetalle(e); }); }));
+    } else if (e.subtipo === 'Medicación' || e.subtipo === 'Otro') {
+      wrap.hidden = false; $('saludDetalleLabel').textContent = (e.subtipo === 'Medicación' ? 'Qué / dosis' : 'Detalle'); chipsEl.innerHTML = ''; textEl.hidden = false; textEl.value = e.detalle || '';
+    } else { wrap.hidden = true; }
+  }
+  function saludIsEmpty(e) { return e && !e.subtipo; }
+  function closeSalud() { var e = byId(openSalud); if (saludIsEmpty(e)) removeEntry(openSalud); $('saludBackdrop').hidden = true; openSalud = null; renderHoy(); }
+
   // ---------- perfil ----------
   function renderPerfilSheet() {
     var perfil = data.child.perfil || (data.child.perfil = {});
@@ -588,6 +630,7 @@
     else if (e.type === 'dys') { var d = dysSummary(e); title = '⚡ ' + d.title; sub = d.sub; }
     else if (e.type === 'sleep') { var p = []; var dr = durStr(e.bed, e.wake, true); if (dr) p.push(dr); if (e.calidad) p.push('calidad ' + e.calidad + '/5'); var ne = (e.eventosNoche || []).length; if (ne) p.push(ne + ' evento' + (ne > 1 ? 's' : '') + ' noche'); title = '🌙 Sueño de anoche'; sub = p.join(' · ') || 'sin datos'; }
     else if (e.type === 'obs') { var o = obsSummary(e); title = '📝 ' + o.title; sub = o.sub; }
+    else if (e.type === 'salud') { var h = saludSummary(e); title = h.title; sub = h.sub; }
     var when = e.time ? e.time + ' ' : '';
     var warn = (e.type === 'dys') || (e.type === 'obs' && e.valencia === 'Difícil') || (e.type === 'act' && data.entries.some(function (x) { return x.type === 'dys' && x.linkedEventId === e.id; }));
     return '<div class="res-line"><span class="k">' + when + '</span><span class="' + (warn ? 'res-warn' : '') + '">' + title + (sub ? ' · <span style="color:var(--muted)">' + sub + '</span>' : '') + '</span></div>';
@@ -799,6 +842,26 @@
     });
     var preTop = topN(pre, 6);
     if (preTop.length) html += '<div class="an-h">Señales que suelen preceder a un desajuste</div><div class="card-an">' + barList(preTop, true) + '</div>';
+    return html;
+  }
+  function fmtHora(min) { return pad(Math.floor(min / 60)) + ':' + pad(min % 60); }
+  function saludAnalysisHtml() {
+    var salud = data.entries.filter(function (e) { return e.type === 'salud'; });
+    if (salud.length < 3) return '';
+    var nDays = Object.keys(data.entries.reduce(function (m, e) { m[e.date] = 1; return m; }, {})).length;
+    var depos = salud.filter(function (e) { return e.subtipo === 'Deposición'; });
+    var diasConDepo = Object.keys(depos.reduce(function (m, e) { m[e.date] = 1; return m; }, {})).length;
+    var mins = depos.filter(function (e) { return e.time; }).map(function (e) { return toMin(e.time); });
+    var horaMedia = mins.length ? fmtHora(Math.round(mins.reduce(function (a, b) { return a + b; }, 0) / mins.length)) : '—';
+    var calDiurnos = salud.filter(function (e) { return e.subtipo === 'Calambres'; }).length, calNoct = 0;
+    data.entries.forEach(function (e) { if (e.type === 'sleep' && e.eventosNoche) calNoct += e.eventosNoche.filter(function (x) { return x.tipo === 'Calambres'; }).length; });
+    var html = '<div class="an-h">🩺 Cuerpo y salud</div>';
+    html += '<div class="kpis">' +
+      '<div class="kpi"><div class="n">' + diasConDepo + '/' + nDays + '</div><div class="l">días con deposición</div></div>' +
+      '<div class="kpi"><div class="n">' + horaMedia + '</div><div class="l">hora media POPO</div></div>' +
+      '<div class="kpi"><div class="n' + ((calDiurnos + calNoct) ? ' warn' : '') + '">' + (calDiurnos + calNoct) + '</div><div class="l">calambres (día+noche)</div></div>' +
+      '</div>';
+    html += '<div class="an-h">Registros de salud</div><div class="card-an">' + barList(topN(salud.reduce(function (m, e) { if (e.subtipo) m[e.subtipo] = (m[e.subtipo] || 0) + 1; return m; }, {}), 8), false) + '</div>';
     return html;
   }
   function dysByDate() { var m = {}; data.entries.forEach(function (e) { if (e.type === 'dys') m[e.date] = (m[e.date] || 0) + 1; }); return m; }
@@ -1046,6 +1109,9 @@
     // observaciones de estado (Fase 2)
     html += obsAnalysisHtml();
 
+    // cuerpo y salud (Fase 3)
+    html += saludAnalysisHtml();
+
     // por momento
     var byMoment = MOMENTS.map(function (m) { return { k: m.key, v: dys.filter(function (e) { return momentOf(e) === m.key; }).length }; });
     html += '<div class="an-h">Desajustes por momento del día</div><div class="card-an">' + barList(byMoment, true) + '</div>';
@@ -1262,6 +1328,7 @@
     if (e.type === 'sleep') { var tt = totalSleepMin(e.date); return { tipo: 'sueño', calidad: e.calidad || null, durmio: e.bed || null, desperto: e.wake || null, total_sueno_min: tt, se_durmio: e.facilidad || null, donde: e.donde || null, desperto_como: e.despertarComo || null, eventos_noche: (e.eventosNoche || []).map(function (x) { return x.tipo + (x.hora ? ' ' + x.hora : ''); }) }; }
     if (e.type === 'nap') return { tipo: 'siesta', momento: momentOf(e), inicio: e.start || null, fin: e.end || null, calidad: e.calidad || null, fallida: !!e.fallida };
     if (e.type === 'obs') return { tipo: 'observacion', momento: momentOf(e), hora: e.time || null, senales: e.senales || [], valencia: e.valencia || null, contexto: e.contexto || null };
+    if (e.type === 'salud') return { tipo: 'salud', subtipo: e.subtipo || null, momento: momentOf(e), hora: e.time || null, detalle: e.detalle || null };
     if (e.type === 'meal') return { tipo: 'comida', nombre: e.nombre || 'comida', momento: momentOf(e), aceptacion: e.aceptacion || null, alimentos: (e.alimentos || []).map(function (f) { return f.nombre; }) };
     if (e.type === 'act') return { tipo: 'actividad', actividad: e.tipo || null, momento: momentOf(e), lugar: e.lugar || null, termino: e.termino || null, con_desajuste: actHasDys(e) };
     if (e.type === 'dys') { var a = e.linkedEventId ? byId(e.linkedEventId) : null; return { tipo: 'desajuste', desregulacion: e.tipos || [], momento: momentOf(e), intensidad: e.intensidad || null, antes: e.antecedentes || [], senales: e.senales || [], ayudo: e.ayudo || [], durante_actividad: a ? (a.tipo || null) : null }; }
@@ -1465,6 +1532,7 @@
     if (ev.type === 'act') return '🚶 ' + (ev.tipo || 'Actividad') + (ev.lugar ? ' · ' + ev.lugar.toLowerCase() : '') + (ev.termino ? ' · terminó ' + ev.termino.toLowerCase() : '');
     if (ev.type === 'dys') return '⚡ ' + ((ev.tipos && ev.tipos.length) ? ev.tipos.join(', ') : 'Desajuste') + ((ev.antecedentes && ev.antecedentes.length) ? ' · tras ' + ev.antecedentes.join(', ').toLowerCase() : '');
     if (ev.type === 'obs') return '📝 ' + ((ev.senales && ev.senales.length) ? ev.senales.join(', ') : (ev.valencia || 'Estado')) + (ev.contexto ? ' · ' + ev.contexto : '');
+    if (ev.type === 'salud') return (ev.subtipo ? saludEm(ev.subtipo) + ' ' + ev.subtipo : '🩺 Salud') + (ev.detalle ? ' · ' + ev.detalle : '');
     if (ev.type === 'nap') return '😴 ' + (ev.fallida ? 'Siesta fallida' : 'Siesta') + (ev.start ? ' · ' + ev.start + '→' + (ev.end || '?') : '') + (ev.calidad ? ' · calidad ' + ev.calidad + '/5' : '') + (ev.nota ? ' · ' + ev.nota : '');
     if (ev.type === 'sleep') {
       var sp = [];
@@ -1507,10 +1575,11 @@
           calidadTexto: CALIDAD_TEXTO.map(function (o) { return o.v; }), acuestoFacil: ACUESTO_FACIL,
           dondeDormir: DONDE_DORMIR, despertarComo: DESPERTAR_COMO, despertarEstado: DESPERTAR_ESTADO,
           nocheEventos: NOCHE_EVENTOS,
-          obsSenales: obsSenalesFlat(), obsValencia: OBS_VALENCIA.map(function (o) { return o.v; })
+          obsSenales: obsSenalesFlat(), obsValencia: OBS_VALENCIA.map(function (o) { return o.v; }),
+          saludSubtipos: SALUD_SUBTIPOS.map(function (o) { return o.k; })
         }
       });
-      voiceEvents = (res.eventos || []).filter(function (e) { return e && ['meal', 'act', 'dys', 'obs', 'nap', 'sleep'].indexOf(e.type) !== -1; });
+      voiceEvents = (res.eventos || []).filter(function (e) { return e && ['meal', 'act', 'dys', 'obs', 'salud', 'nap', 'sleep'].indexOf(e.type) !== -1; });
       renderVoicePreview();
     } catch (e) {
       $('voicePreview').innerHTML = '<div class="note-box err">⚠️ ' + esc(e.message) + '</div>';
@@ -1555,6 +1624,7 @@
     else if (ev.type === 'act') { base.tipo = ev.tipo ? snapOne(ev.tipo, ACT_TYPES) : 'Otra'; if (ev.lugar) base.lugar = snapOne(ev.lugar, ACT_LUGAR); if (ev.termino) base.termino = snapOne(ev.termino, ACT_TERMINO); base.compania = []; base.ambiente = []; base.senales = []; base.estrategias = []; }
     else if (ev.type === 'dys') { base.tipos = snapArr(ev.tipos, DYS.tipos); base.antecedentes = snapArr(ev.antecedentes, DYS.antecedentes); base.senales = snapArr(ev.senales, DYS.senales); base.sensorial = snapArr(ev.sensorial, DYS.sensorial); base.ayudo = snapArr(ev.ayudo, DYS.ayudo); if (ev.intensidad) base.intensidad = +ev.intensidad; base.completo = true; }
     else if (ev.type === 'obs') { base.senales = snapArr(ev.senales, obsSenalesFlat()); if (ev.valencia) base.valencia = snapOne(ev.valencia, OBS_VALENCIA.map(function (o) { return o.v; })); if (ev.contexto) base.contexto = String(ev.contexto); }
+    else if (ev.type === 'salud') { base.subtipo = ev.subtipo ? snapOne(ev.subtipo, SALUD_SUBTIPOS.map(function (o) { return o.k; })) : 'Otro'; if (ev.detalle) base.detalle = snapOne(String(ev.detalle), DEPOSICION_DETALLE); }
     else if (ev.type === 'nap') {
       if (ev.start) base.start = ev.start; if (ev.end) base.end = ev.end; if (ev.calidad) base.calidad = +ev.calidad;
       if (ev.acuesto) base.acuesto = snapOne(ev.acuesto, NAP_ACUESTO);
@@ -1604,6 +1674,19 @@
     $('obsDelete').addEventListener('click', function () { if (openObs) { removeEntry(openObs); closeObs(); } });
     $('obsBackdrop').addEventListener('click', function (ev) { if (ev.target === this) closeObs(); });
     $('timelineToggle').addEventListener('click', function () { timelineOpen = !timelineOpen; renderTimeline(); });
+
+    // cuerpo y salud (Fase 3)
+    $('qPopo').addEventListener('click', function () { quickSalud('Deposición'); });
+    $('qCalambre').addEventListener('click', function () { quickSalud('Calambres'); });
+    $('qMedic').addEventListener('click', function () { var e = addEntry('salud', { subtipo: 'Medicación', time: nowTime(), moment: nowMoment() }); openSaludSheet(e.id); });
+    $('qOtroSalud').addEventListener('click', function () { var e = addEntry('salud', { time: nowTime(), moment: nowMoment() }); openSaludSheet(e.id); });
+    $('saludTimeInput').addEventListener('change', function () { var e = byId(openSalud); if (e) { e.time = this.value; if (this.value) e.moment = momentFromTime(this.value); save(); momentPicker('saludTimeInput', 'saludMoment', e); $('saludTime').textContent = momentEm(momentOf(e)) + ' ' + (e.time || momentOf(e).toLowerCase()); } });
+    $('saludDetalleText').addEventListener('input', function () { var e = byId(openSalud); if (e) { e.detalle = this.value; save(); } });
+    $('saludNota').addEventListener('input', function () { var e = byId(openSalud); if (e) { e.nota = this.value; save(); } });
+    $('saludClose').addEventListener('click', closeSalud);
+    $('saludSave').addEventListener('click', function () { toast('Guardado'); closeSalud(); });
+    $('saludDelete').addEventListener('click', function () { if (openSalud) { removeEntry(openSalud); closeSalud(); } });
+    $('saludBackdrop').addEventListener('click', function (ev) { if (ev.target === this) closeSalud(); });
 
     // anotar por voz
     $('voiceBtn').addEventListener('click', openVoice);
