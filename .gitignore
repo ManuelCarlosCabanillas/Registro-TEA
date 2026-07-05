@@ -1,0 +1,8 @@
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Herramientas locales (no hacen falta en el hosting)
+serve.ps1
+.claude/

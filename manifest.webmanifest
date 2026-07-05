@@ -1,0 +1,15 @@
+{
+  "name": "Registro TEA",
+  "short_name": "Registro",
+  "description": "Registro diario de ánimo, sueño, comidas y desajustes para peques neurodivergentes.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F4F0",
+  "theme_color": "#F5F4F0",
+  "lang": "es",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

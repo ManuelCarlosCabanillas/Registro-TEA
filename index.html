@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Registro TEA</title>
+  <meta name="theme-color" content="#F5F4F0" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Registro" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <div>
+        <div class="date-label" id="dateLabel">—</div>
+        <h1 id="viewTitle">Hoy</h1>
+      </div>
+      <button class="child-chip" id="childChip" aria-label="Editar nombre">
+        <span class="avatar" id="childAvatar">L</span>
+        <span id="childName">Leo</span>
+      </button>
+    </header>
+
+    <main id="view-hoy" class="view">
+      <div class="date-nav">
+        <button class="dn-arrow" id="dayPrev" aria-label="Día anterior">‹</button>
+        <button class="dn-label" id="dayLabel">Hoy</button>
+        <button class="dn-arrow" id="dayNext" aria-label="Día siguiente">›</button>
+      </div>
+      <input type="date" id="datePicker" class="dn-hidden" />
+      <div id="anotarAlert" class="anotar-alert" hidden></div>
+      <button class="hot-btn" id="hotBtn">⚡ Registrar desajuste ahora</button>
+      <p class="hint" id="hotHint">Un toque ahora. Completas el detalle cuando esté tranquilo.</p>
+
+      <section class="card">
+        <div class="card-head">🌙 <span>Sueño</span></div>
+        <div class="sub">Noche</div>
+        <div class="time-row">
+          <label>Se acostó <input type="time" id="sleepBed" /></label>
+          <label>Se despertó <input type="time" id="sleepWake" /></label>
+          <span class="dur" id="sleepDur"></span>
+        </div>
+        <div class="field-label">¿Cuánto tardó en dormirse?</div>
+        <div class="chips" id="latChips"></div>
+        <div class="field-label">Calidad percibida</div>
+        <div class="chips faces" id="qualChips"></div>
+        <button class="more-toggle" data-target="sleepMore">＋ más detalle</button>
+        <div class="more" id="sleepMore" hidden>
+          <div class="field-label">Despertares nocturnos</div>
+          <div class="chips" id="wakeChips"></div>
+          <div class="field-label">Ayudas / contexto</div>
+          <div class="chips" id="aidChips"></div>
+        </div>
+        <div class="sub" style="margin-top:14px">Siestas</div>
+        <div id="napList"></div>
+        <button class="btn-add-block" id="addNap">＋ Añadir siesta</button>
+      </section>
+
+      <section class="card">
+        <div class="card-head">🍽️ <span>Comidas</span></div>
+        <div id="mealList"></div>
+        <button class="btn-add-block" id="addMeal">＋ Añadir comida</button>
+      </section>
+
+      <section class="card">
+        <div class="card-head">🚶 <span>Actividades</span></div>
+        <div id="activityList"></div>
+        <button class="btn-add-block" id="addActivity">＋ Añadir actividad</button>
+      </section>
+
+      <section class="card">
+        <div class="card-head">⚡ <span>Desajustes de hoy</span></div>
+        <div id="dysList"></div>
+        <button class="btn-add-block" id="addDys">＋ Añadir desajuste</button>
+      </section>
+
+      <p class="ver">Registro TEA · v12 · local</p>
+    </main>
+
+    <main id="view-resumen" class="view" hidden>
+      <div id="resumen"></div>
+      <section class="card" id="docsCard">
+        <div class="card-head">📎 <span>Informes y documentos</span></div>
+        <p class="hint2" style="margin:0 0 8px">Sube análisis, informes del pediatra/terapeuta, etc. Se guardan en este dispositivo.</p>
+        <div id="docList"></div>
+        <input type="file" id="docInput" accept="image/*,application/pdf" hidden />
+        <button class="btn-add-block" id="docAdd">＋ Subir informe / análisis</button>
+      </section>
+    </main>
+
+    <main id="view-analisis" class="view" hidden>
+      <div id="analisis"></div>
+    </main>
+
+    <main id="view-historial" class="view" hidden>
+      <div class="hist-bar">
+        <button class="btn-ghost" id="exportBtn">Exportar datos</button>
+        <button class="btn-ghost danger" id="clearBtn">Borrar todo</button>
+      </div>
+      <div id="historyList"></div>
+    </main>
+
+    <nav class="tabbar">
+      <button class="tab active" data-view="hoy">✏️<span>Anotar</span></button>
+      <button class="tab" data-view="resumen">▦<span>Resumen</span></button>
+      <button class="tab" data-view="analisis">📈<span>Análisis</span></button>
+      <button class="tab" data-view="historial">📅<span>Historial</span></button>
+    </nav>
+  </div>
+
+  <!-- Sheet: desajuste -->
+  <div class="sheet-backdrop z-dys" id="sheetBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Detalle del desajuste">
+      <div class="sheet-head">
+        <div><h2>Desajuste</h2><div class="muted" id="sheetTime"></div></div>
+        <button class="icon-btn" id="sheetClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="linked-note" id="sheetLinked" hidden></div>
+        <div class="field-label">¿Cuándo fue? — hora y/o momento</div>
+        <div class="time-moment">
+          <input type="time" id="dysTime" />
+          <div class="chips" id="dysMoment"></div>
+        </div>
+        <div class="field-label">Tipo de desregulación <span class="muted">(varios)</span></div>
+        <div class="chips" id="g-tipos"></div>
+        <div class="field-label">Intensidad</div>
+        <div class="chips" id="g-intensidad"></div>
+        <div class="field-label">¿Qué pasó antes? <span class="muted">(varios)</span></div>
+        <div class="chips" id="g-antecedentes"></div>
+        <div class="field-label">Señales tempranas <span class="muted">(varios)</span></div>
+        <div class="chips" id="g-senales"></div>
+        <div class="field-label">Entorno sensorial <span class="muted">(varios)</span></div>
+        <div class="chips" id="g-sensorial"></div>
+        <div class="field-label">Duración</div>
+        <div class="chips" id="g-duracion"></div>
+        <div class="field-label">¿Qué ayudó? <span class="muted">(varios)</span></div>
+        <div class="chips" id="g-ayudo"></div>
+        <div class="field-label">Tiempo de recuperación</div>
+        <div class="chips" id="g-recuperacion"></div>
+        <div class="field-label">Nota</div>
+        <textarea id="sheetNota" rows="2" placeholder="Opcional…"></textarea>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn-ghost danger" id="sheetDelete">Eliminar</button>
+        <button class="btn-primary" id="sheetSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: comida -->
+  <div class="sheet-backdrop z-meal" id="mealBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Comida">
+      <div class="sheet-head">
+        <div><h2>Comida</h2><div class="muted">Ponle nombre y hora</div></div>
+        <button class="icon-btn" id="mealClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field-label">Nombre</div>
+        <input type="text" id="mealName" placeholder="Desayuno, merienda del cole…" />
+        <div class="field-label">Hora y/o momento</div>
+        <div class="time-moment">
+          <input type="time" id="mealTime" />
+          <div class="chips" id="mealMoment"></div>
+        </div>
+        <div class="field-label">¿Qué comió?</div>
+        <div class="food-input">
+          <input type="text" id="foodInput" list="foodbank" placeholder="Escribe un alimento…" autocomplete="off" />
+          <datalist id="foodbank"></datalist>
+          <button class="btn-add" id="foodAdd">Añadir</button>
+        </div>
+        <div class="food-list" id="foodChips"></div>
+        <div class="field-label">¿Cómo fue en general?</div>
+        <div class="chips" id="mealAcceptChips"></div>
+        <p class="hint2">Toca un alimento para su detalle (cantidad, textura, si es nuevo…).</p>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn-ghost danger" id="mealDelete">Eliminar</button>
+        <button class="btn-primary" id="mealSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: alimento -->
+  <div class="sheet-backdrop z-food" id="foodBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Detalle del alimento">
+      <div class="sheet-head">
+        <div><h2 id="foodTitle">Alimento</h2><div class="muted" id="foodSub"></div></div>
+        <button class="icon-btn" id="foodClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field-label">¿Cómo lo comió?</div>
+        <div class="chips" id="fg-aceptacion"></div>
+        <div class="field-label">Cantidad</div>
+        <div class="chips" id="fg-cantidad"></div>
+        <div class="field-label">Reacción sensorial <span class="muted">(varios)</span></div>
+        <div class="chips" id="fg-sensorial"></div>
+        <label class="check"><input type="checkbox" id="foodNew" /> Es un alimento nuevo</label>
+        <div class="field-label">Nota</div>
+        <textarea id="foodNota" rows="2" placeholder="Opcional…"></textarea>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn-ghost danger" id="foodDelete">Quitar alimento</button>
+        <button class="btn-primary" id="foodSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: actividad -->
+  <div class="sheet-backdrop z-act" id="activityBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Actividad">
+      <div class="sheet-head">
+        <div><h2>Actividad</h2><div class="muted">Tipo, hora y cómo fue</div></div>
+        <button class="icon-btn" id="actClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field-label">Tipo de actividad</div>
+        <div class="chips" id="actTypeChips"></div>
+        <div class="field-label">Hora y/o momento</div>
+        <div class="time-moment">
+          <input type="time" id="actTime" />
+          <div class="chips" id="actMoment"></div>
+        </div>
+        <div class="field-label">Lugar</div>
+        <div class="chips" id="actLugar"></div>
+        <div class="field-label">Duración</div>
+        <div class="chips" id="actDuracion"></div>
+        <div class="field-label">¿Con quién / compañía?</div>
+        <div class="chips" id="actCompania"></div>
+        <div class="field-label">¿Qué pasó? / notas</div>
+        <input type="text" id="actNota" placeholder="Opcional…" />
+        <div class="section-div">Ánimo y regulación</div>
+        <div class="field-label">Ánimo durante</div>
+        <div class="chips zones" id="actZona"></div>
+        <div class="field-label">Ambiente <span class="muted">(varios)</span></div>
+        <div class="chips" id="ambChips"></div>
+        <div class="field-label">Señales del cuerpo <span class="muted">(varios)</span></div>
+        <div class="chips" id="senalChips"></div>
+        <div class="field-label">Estrategias usadas <span class="muted">(varios)</span></div>
+        <div class="chips" id="estChips"></div>
+        <div class="field-label">¿Ayudaron?</div>
+        <div class="chips" id="ayudaronChips"></div>
+        <div class="field-label">¿Cómo terminó?</div>
+        <div class="chips" id="actTermino"></div>
+        <div class="section-div">Desajustes en esta actividad</div>
+        <div id="actDysList"></div>
+        <button class="btn-add-block" id="addActDys">＋ Desajuste en esta actividad</button>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn-ghost danger" id="actDelete">Eliminar</button>
+        <button class="btn-primary" id="actSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: siesta -->
+  <div class="sheet-backdrop z-meal" id="napBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Siesta">
+      <div class="sheet-head">
+        <div><h2>Siesta</h2><div class="muted">Horas y calidad</div></div>
+        <button class="icon-btn" id="napClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body">
+        <div class="field-label">Horas</div>
+        <div class="time-row">
+          <label>Inicio <input type="time" id="napStart" /></label>
+          <label>Fin <input type="time" id="napEnd" /></label>
+          <span class="dur" id="napDur"></span>
+        </div>
+        <div class="field-label">Calidad</div>
+        <div class="chips faces" id="napQual"></div>
+      </div>
+      <div class="sheet-foot">
+        <button class="btn-ghost danger" id="napDelete">Eliminar</button>
+        <button class="btn-primary" id="napSave">Guardar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sheet: perfil sensorial -->
+  <div class="sheet-backdrop z-perfil" id="perfilBackdrop" hidden>
+    <div class="sheet" role="dialog" aria-label="Perfil sensorial">
+      <div class="sheet-head">
+        <div><h2>Perfil sensorial</h2><div class="muted">Cómo responde a cada sentido (referencia)</div></div>
+        <button class="icon-btn" id="perfilClose" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="sheet-body" id="perfilBody"></div>
+      <div class="sheet-foot">
+        <span class="muted">Se guarda solo</span>
+        <button class="btn-primary" id="perfilSave">Hecho</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function () {});
+      });
+    }
+  </script>
+</body>
+</html>
